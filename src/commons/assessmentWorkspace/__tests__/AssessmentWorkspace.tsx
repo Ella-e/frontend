@@ -28,14 +28,12 @@ const defaultProps = assertType<AssessmentWorkspaceProps>()({
     hoursBeforeEarlyXpDecay: 48,
     earlySubmissionXp: 200
   },
-  activeEditorTabIndex: 0,
-  editorTabs: [
-    { value: '', prependValue: '', postpendValue: '', highlightedLines: [], breakpoints: [] }
-  ],
+  programPrependValue: '',
+  programPostpendValue: '',
   editorTestcases: [],
   hasUnsavedChanges: false,
   handleEditorValueChange: mockedHandleEditorValueChange,
-  handleEditorUpdateBreakpoints: (breakpoints: string[]) => {},
+  handleEditorUpdateBreakpoints: (editorTabIndex: number, newBreakpoints: string[]) => {},
   handleReplEval: () => {},
   handleSave: (id: number, answer: number | string | ContestEntry[]) => {},
   handleUpdateHasUnsavedChanges: (hasUnsavedChanges: boolean) => {},

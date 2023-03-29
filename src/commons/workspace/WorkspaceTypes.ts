@@ -37,9 +37,16 @@ export const TOGGLE_EDITOR_AUTORUN = 'TOGGLE_EDITOR_AUTORUN';
 export const TOGGLE_USING_SUBST = 'TOGGLE_USING_SUBST';
 export const UPDATE_CURRENT_ASSESSMENT_ID = 'UPDATE_CURRENT_ASSESSMENT_ID';
 export const UPDATE_CURRENT_SUBMISSION_ID = 'UPDATE_CURRENT_SUBMISSION_ID';
+export const TOGGLE_FOLDER_MODE = 'TOGGLE_FOLDER_MODE';
+export const UPDATE_ACTIVE_EDITOR_TAB_INDEX = 'UPDATE_ACTIVE_EDITOR_TAB_INDEX';
 export const UPDATE_ACTIVE_EDITOR_TAB = 'UPDATE_ACTIVE_EDITOR_TAB';
 export const UPDATE_EDITOR_VALUE = 'UPDATE_EDITOR_VALUE';
 export const UPDATE_EDITOR_BREAKPOINTS = 'UPDATE_EDITOR_BREAKPOINTS';
+export const ADD_EDITOR_TAB = 'ADD_EDITOR_TAB';
+export const SHIFT_EDITOR_TAB = 'SHIFT_EDITOR_TAB';
+export const REMOVE_EDITOR_TAB = 'REMOVE_EDITOR_TAB';
+export const REMOVE_EDITOR_TAB_FOR_FILE = 'REMOVE_EDITOR_TAB_FOR_FILE';
+export const REMOVE_EDITOR_TABS_FOR_DIRECTORY = 'REMOVE_EDITOR_TABS_FOR_DIRECTORY';
 export const UPDATE_HAS_UNSAVED_CHANGES = 'UPDATE_HAS_UNSAVED_CHANGES';
 export const UPDATE_REPL_VALUE = 'UPDATE_REPL_VALUE';
 export const UPDATE_WORKSPACE = 'UPDATE_WORKSPACE';
@@ -80,9 +87,8 @@ export type WorkspaceManagerState = {
 };
 
 export type EditorTabState = {
+  readonly filePath?: string;
   readonly value: string;
-  readonly prependValue: string;
-  readonly postpendValue: string;
   readonly highlightedLines: HighlightedLines[];
   readonly breakpoints: string[];
   readonly newCursorPosition?: Position;
@@ -91,8 +97,11 @@ export type EditorTabState = {
 export type WorkspaceState = {
   readonly autogradingResults: AutogradingResult[];
   readonly context: Context;
+  readonly isFolderModeEnabled: boolean;
   readonly activeEditorTabIndex: number | null;
   readonly editorTabs: EditorTabState[];
+  readonly programPrependValue: string;
+  readonly programPostpendValue: string;
   readonly editorSessionId: string;
   readonly editorTestcases: Testcase[];
   readonly execTime: number;

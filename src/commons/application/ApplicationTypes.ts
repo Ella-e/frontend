@@ -6,7 +6,9 @@ import { DashboardState } from '../../features/dashboard/DashboardTypes';
 import { Grading } from '../../features/grading/GradingTypes';
 import { PlaygroundState } from '../../features/playground/PlaygroundTypes';
 import { PlaybackStatus, RecordingStatus } from '../../features/sourceRecorder/SourceRecorderTypes';
+import { WORKSPACE_BASE_PATHS } from '../../pages/fileSystem/createInBrowserFileSystem';
 import { Assessment } from '../assessment/AssessmentTypes';
+import { FileSystemState } from '../fileSystem/FileSystemTypes';
 import Constants from '../utils/Constants';
 import { createContext } from '../utils/JsSlangHelper';
 import {
@@ -26,6 +28,7 @@ export type OverallState = {
   readonly session: SessionState;
   readonly workspaces: WorkspaceManagerState;
   readonly dashboard: DashboardState;
+  readonly fileSystem: FileSystemState;
 };
 
 export type ApplicationState = {
@@ -116,13 +119,20 @@ const variantDisplay: Map<Variant, string> = new Map([
   [Variant.CONCURRENT, 'Concurrent'],
   [Variant.LAZY, 'Lazy'],
   [Variant.GPU, 'GPU'],
-  [Variant.NATIVE, 'Native']
+  [Variant.NATIVE, 'Native'],
+  [Variant.EXPLICIT_CONTROL, 'Explicit-Control']
 ]);
 
 export const fullJSLanguage: SALanguage = {
   chapter: Chapter.FULL_JS,
   variant: Variant.DEFAULT,
   displayName: 'full JavaScript'
+};
+
+export const fullTSLanguage: SALanguage = {
+  chapter: Chapter.FULL_TS,
+  variant: Variant.DEFAULT,
+  displayName: 'full TypeScript'
 };
 
 export const htmlLanguage: SALanguage = {
@@ -135,6 +145,8 @@ export const styliseSublanguage = (chapter: Chapter, variant: Variant = Variant.
   switch (chapter) {
     case Chapter.FULL_JS:
       return fullJSLanguage.displayName;
+    case Chapter.FULL_TS:
+      return fullTSLanguage.displayName;
     case Chapter.HTML:
       return htmlLanguage.displayName;
     default:
@@ -162,7 +174,8 @@ export const sublanguages: Language[] = [
   { chapter: Chapter.SOURCE_4, variant: Variant.DEFAULT },
   { chapter: Chapter.SOURCE_4, variant: Variant.TYPED },
   { chapter: Chapter.SOURCE_4, variant: Variant.GPU },
-  { chapter: Chapter.SOURCE_4, variant: Variant.NATIVE }
+  { chapter: Chapter.SOURCE_4, variant: Variant.NATIVE },
+  { chapter: Chapter.SOURCE_4, variant: Variant.EXPLICIT_CONTROL }
 ];
 
 export const sourceLanguages: SALanguage[] = sublanguages.map(sublang => {
@@ -236,18 +249,19 @@ export const createDefaultWorkspace = (workspaceLocation: WorkspaceLocation): Wo
     workspaceLocation,
     Constants.defaultSourceVariant
   ),
+  isFolderModeEnabled: false,
   activeEditorTabIndex: 0,
   editorTabs: [
     {
       value: ['playground', 'sourcecast', 'githubAssessments'].includes(workspaceLocation)
         ? defaultEditorValue
         : '',
-      prependValue: '',
-      postpendValue: '',
       highlightedLines: [],
       breakpoints: []
     }
   ],
+  programPrependValue: '',
+  programPostpendValue: '',
   editorSessionId: '',
   isEditorReadonly: false,
   editorTestcases: [],
@@ -285,7 +299,15 @@ export const defaultWorkspaceManager: WorkspaceManagerState = {
   },
   playground: {
     ...createDefaultWorkspace('playground'),
-    usingSubst: false
+    usingSubst: false,
+    editorTabs: [
+      {
+        filePath: `${WORKSPACE_BASE_PATHS.playground}/program.js`,
+        value: defaultEditorValue,
+        highlightedLines: [],
+        breakpoints: []
+      }
+    ]
   },
   sourcecast: {
     ...createDefaultWorkspace('sourcecast'),
@@ -355,6 +377,10 @@ export const defaultSession: SessionState = {
   notifications: []
 };
 
+export const defaultFileSystem: FileSystemState = {
+  inBrowserFileSystem: null
+};
+
 export const defaultState: OverallState = {
   academy: defaultAcademy,
   achievement: defaultAchievement,
@@ -362,5 +388,6 @@ export const defaultState: OverallState = {
   dashboard: defaultDashboard,
   playground: defaultPlayground,
   session: defaultSession,
-  workspaces: defaultWorkspaceManager
+  workspaces: defaultWorkspaceManager,
+  fileSystem: defaultFileSystem
 };

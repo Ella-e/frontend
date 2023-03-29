@@ -65,7 +65,7 @@ import SideContentToneMatrix from '../sideContent/SideContentToneMatrix';
 import { SideContentTab, SideContentType } from '../sideContent/SideContentTypes';
 import Constants from '../utils/Constants';
 import { history } from '../utils/HistoryHelper';
-import { useResponsive } from '../utils/Hooks';
+import { useResponsive, useTypedSelector } from '../utils/Hooks';
 import { showWarningMessage } from '../utils/NotificationsHelper';
 import { assessmentTypeLink } from '../utils/ParamParseHelper';
 import Workspace, { WorkspaceProps } from '../workspace/Workspace';
@@ -80,18 +80,20 @@ import {
   evalTestcase,
   navigateToDeclaration,
   promptAutocomplete,
+  removeEditorTab,
   resetWorkspace,
   runAllTestcases,
+  updateActiveEditorTabIndex,
   updateCurrentAssessmentId,
   updateReplValue
 } from '../workspace/WorkspaceActions';
-import { EditorTabState, WorkspaceLocation } from '../workspace/WorkspaceTypes';
+import { WorkspaceLocation } from '../workspace/WorkspaceTypes';
 import AssessmentWorkspaceGradingResult from './AssessmentWorkspaceGradingResult';
 export type AssessmentWorkspaceProps = DispatchProps & StateProps & OwnProps;
 
 export type DispatchProps = {
-  handleEditorValueChange: (val: string) => void;
-  handleEditorUpdateBreakpoints: (breakpoints: string[]) => void;
+  handleEditorValueChange: (editorTabIndex: number, newEditorValue: string) => void;
+  handleEditorUpdateBreakpoints: (editorTabIndex: number, newBreakpoints: string[]) => void;
   handleReplEval: () => void;
   handleSave: (id: number, answer: number | string | ContestEntry[]) => void;
   handleUpdateHasUnsavedChanges: (hasUnsavedChanges: boolean) => void;
@@ -108,8 +110,8 @@ export type OwnProps = {
 export type StateProps = {
   assessment?: Assessment;
   autogradingResults: AutogradingResult[];
-  activeEditorTabIndex: number | null;
-  editorTabs: EditorTabState[];
+  programPrependValue: string;
+  programPostpendValue: string;
   editorTestcases: Testcase[];
   hasUnsavedChanges: boolean;
   isRunning: boolean;
@@ -138,8 +140,13 @@ const AssessmentWorkspace: React.FC<AssessmentWorkspaceProps> = props => {
 
   const dispatch = useDispatch();
 
+  const { isFolderModeEnabled, activeEditorTabIndex, editorTabs } = useTypedSelector(
+    store => store.workspaces[workspaceLocation]
+  );
+
   React.useEffect(() => {
-    props.handleEditorValueChange('');
+    // TODO: Hardcoded to make use of the first editor tab. Refactoring is needed for this workspace to enable Folder mode.
+    props.handleEditorValueChange(0, '');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -175,7 +182,8 @@ const AssessmentWorkspace: React.FC<AssessmentWorkspaceProps> = props => {
       }
     }
 
-    props.handleEditorValueChange(answer);
+    // TODO: Hardcoded to make use of the first editor tab. Refactoring is needed for this workspace to enable Folder mode.
+    props.handleEditorValueChange(0, answer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -212,7 +220,8 @@ const AssessmentWorkspace: React.FC<AssessmentWorkspaceProps> = props => {
       props.handleUpdateHasUnsavedChanges(true);
     }
 
-    props.handleEditorValueChange(newCode);
+    // TODO: Hardcoded to make use of the first editor tab. Refactoring is needed for this workspace to enable Folder mode.
+    props.handleEditorValueChange(0, newCode);
 
     const input: Input = {
       time: Date.now(),
@@ -272,6 +281,16 @@ const AssessmentWorkspace: React.FC<AssessmentWorkspaceProps> = props => {
     pushLog(input);
   };
 
+  const setActiveEditorTabIndex = React.useCallback(
+    (activeEditorTabIndex: number | null) =>
+      dispatch(updateActiveEditorTabIndex(workspaceLocation, activeEditorTabIndex)),
+    [dispatch]
+  );
+  const removeEditorTabByIndex = React.useCallback(
+    (editorTabIndex: number) => dispatch(removeEditorTab(workspaceLocation, editorTabIndex)),
+    [dispatch]
+  );
+
   /* ================
      Helper Functions
      ================ */
@@ -297,15 +316,15 @@ const AssessmentWorkspace: React.FC<AssessmentWorkspaceProps> = props => {
 
     let autogradingResults: AutogradingResult[] = [];
     let editorValue: string = '';
-    let editorPrepend: string = '';
-    let editorPostpend: string = '';
+    let programPrependValue: string = '';
+    let programPostpendValue: string = '';
     let editorTestcases: Testcase[] = [];
 
     if (question.type === QuestionTypes.programming) {
       const questionData = question as IProgrammingQuestion;
       autogradingResults = questionData.autogradingResults;
-      editorPrepend = questionData.prepend;
-      editorPostpend = questionData.postpend;
+      programPrependValue = questionData.prepend;
+      programPostpendValue = questionData.postpend;
       editorTestcases = questionData.testcases;
 
       editorValue = questionData.answer as string;
@@ -327,11 +346,12 @@ const AssessmentWorkspace: React.FC<AssessmentWorkspaceProps> = props => {
 
     if (question.type === QuestionTypes.voting) {
       const questionData = question as IContestVotingQuestion;
-      editorPrepend = questionData.prepend;
-      editorPostpend = questionData.postpend;
+      programPrependValue = questionData.prepend;
+      programPostpendValue = questionData.postpend;
     }
 
-    props.handleEditorUpdateBreakpoints([]);
+    // TODO: Hardcoded to make use of the first editor tab. Refactoring is needed for this workspace to enable Folder mode.
+    props.handleEditorUpdateBreakpoints(0, []);
     dispatch(updateCurrentAssessmentId(assessmentId, questionId));
     dispatch(
       resetWorkspace(workspaceLocation, {
@@ -340,12 +360,12 @@ const AssessmentWorkspace: React.FC<AssessmentWorkspaceProps> = props => {
         editorTabs: [
           {
             value: editorValue,
-            prependValue: editorPrepend,
-            postpendValue: editorPostpend,
             highlightedLines: [],
             breakpoints: []
           }
         ],
+        programPrependValue,
+        programPostpendValue,
         editorTestcases
       })
     );
@@ -358,7 +378,8 @@ const AssessmentWorkspace: React.FC<AssessmentWorkspaceProps> = props => {
     dispatch(beginClearContext(workspaceLocation, question.library, true));
     props.handleUpdateHasUnsavedChanges(false);
     if (editorValue) {
-      props.handleEditorValueChange(editorValue);
+      // TODO: Hardcoded to make use of the first editor tab. Refactoring is needed for this workspace to enable Folder mode.
+      props.handleEditorValueChange(0, editorValue);
     }
   };
 
@@ -373,7 +394,8 @@ const AssessmentWorkspace: React.FC<AssessmentWorkspaceProps> = props => {
     const isGraded = props.assessment!.questions[questionId].grader !== undefined;
     const isContestVoting = props.assessment!.questions[questionId]?.type === 'voting';
     const handleContestEntryClick = (_submissionId: number, answer: string) => {
-      props.handleEditorValueChange(answer);
+      // TODO: Hardcoded to make use of the first editor tab. Refactoring is needed for this workspace to enable Folder mode.
+      props.handleEditorValueChange(0, answer);
     };
 
     const tabs: SideContentTab[] = isContestVoting
@@ -580,7 +602,7 @@ const AssessmentWorkspace: React.FC<AssessmentWorkspaceProps> = props => {
 
     // TODO: Hardcoded to make use of the first editor tab. Rewrite after editor tabs are added.
     const onClickSave = () =>
-      props.handleSave(props.assessment!.questions[questionId].id, props.editorTabs[0].value);
+      props.handleSave(props.assessment!.questions[questionId].id, editorTabs[0].value);
 
     const onClickResetTemplate = () => {
       setShowResetTemplateOverlay(true);
@@ -749,7 +771,9 @@ const AssessmentWorkspace: React.FC<AssessmentWorkspaceProps> = props => {
             label="Confirm"
             onClick={() => {
               closeOverlay();
+              // TODO: Hardcoded to make use of the first editor tab. Refactoring is needed for this workspace to enable Folder mode.
               props.handleEditorValueChange(
+                0,
                 (props.assessment!.questions[questionId] as IProgrammingQuestion).solutionTemplate
               );
               props.handleUpdateHasUnsavedChanges(true);
@@ -771,7 +795,11 @@ const AssessmentWorkspace: React.FC<AssessmentWorkspaceProps> = props => {
     question.type === QuestionTypes.programming || question.type === QuestionTypes.voting
       ? {
           editorVariant: 'normal',
-          editorTabs: props.editorTabs.map(convertEditorTabStateToProps),
+          isFolderModeEnabled,
+          activeEditorTabIndex,
+          setActiveEditorTabIndex,
+          removeEditorTabByIndex,
+          editorTabs: editorTabs.map(convertEditorTabStateToProps),
           editorSessionId: '',
           sourceChapter: question.library.chapter || Chapter.SOURCE_4,
           sourceVariant: question.library.variant ?? Variant.DEFAULT,

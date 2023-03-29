@@ -11,6 +11,7 @@ import { IconNames } from '@blueprintjs/icons';
 import classNames from 'classnames';
 import { Chapter, Variant } from 'js-slang/dist/types';
 import React, { useEffect, useState } from 'react';
+import { useDispatch } from 'react-redux';
 
 import { InterpreterOutput } from '../application/ApplicationTypes';
 import {
@@ -48,8 +49,10 @@ import { SideContentProps } from '../sideContent/SideContent';
 import SideContentToneMatrix from '../sideContent/SideContentToneMatrix';
 import { SideContentTab, SideContentType } from '../sideContent/SideContentTypes';
 import { history } from '../utils/HistoryHelper';
+import { useTypedSelector } from '../utils/Hooks';
 import Workspace, { WorkspaceProps } from '../workspace/Workspace';
-import { EditorTabState, WorkspaceState } from '../workspace/WorkspaceTypes';
+import { removeEditorTab, updateActiveEditorTabIndex } from '../workspace/WorkspaceActions';
+import { WorkspaceLocation, WorkspaceState } from '../workspace/WorkspaceTypes';
 import {
   retrieveLocalAssessment,
   storeLocalAssessment,
@@ -65,15 +68,14 @@ export type DispatchProps = {
   handleClearContext: (library: Library, shouldInitLibrary: boolean) => void;
   handleDeclarationNavigate: (cursorPosition: Position) => void;
   handleEditorEval: () => void;
-  handleEditorValueChange: (val: string) => void;
-  handleEditorUpdateBreakpoints: (breakpoints: string[]) => void;
+  handleEditorValueChange: (editorTabIndex: number, newEditorValue: string) => void;
+  handleEditorUpdateBreakpoints: (editorTabIndex: number, newBreakpoints: string[]) => void;
   handleInterruptEval: () => void;
   handleReplEval: () => void;
   handleReplOutputClear: () => void;
   handleReplValueChange: (newValue: string) => void;
   handleResetWorkspace: (options: Partial<WorkspaceState>) => void;
   handleUpdateWorkspace: (options: Partial<WorkspaceState>) => void;
-  handleUpdateActiveEditorTab: (options: Partial<EditorTabState>) => void;
   handleSave: (id: number, answer: number | string) => void;
   handleSideContentHeightChange: (heightChange: number) => void;
   handleTestcaseEval: (testcaseId: number) => void;
@@ -95,8 +97,6 @@ export type OwnProps = {
 };
 
 export type StateProps = {
-  activeEditorTabIndex: number | null;
-  editorTabs: EditorTabState[];
   hasUnsavedChanges: boolean;
   isRunning: boolean;
   isDebugging: boolean;
@@ -108,12 +108,19 @@ export type StateProps = {
   storedQuestionId?: number;
 };
 
+const workspaceLocation: WorkspaceLocation = 'assessment';
+
 const EditingWorkspace: React.FC<EditingWorkspaceProps> = props => {
   const [assessment, setAssessment] = useState(retrieveLocalAssessment());
   const [editingMode, setEditingMode] = useState('question');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [showResetTemplateOverlay, setShowResetTemplateOverlay] = useState(false);
   const [originalMaxXp, setOriginalMaxXp] = useState(0);
+  const dispatch = useDispatch();
+
+  const { isFolderModeEnabled, activeEditorTabIndex, editorTabs } = useTypedSelector(
+    store => store.workspaces[workspaceLocation]
+  );
 
   /**
    * After mounting (either an older copy of the assessment
@@ -133,6 +140,23 @@ const EditingWorkspace: React.FC<EditingWorkspaceProps> = props => {
    * if a workspace reset is needed.
    */
   useEffect(() => checkWorkspaceReset());
+
+  const setActiveEditorTabIndex = React.useCallback(
+    (activeEditorTabIndex: number | null) =>
+      dispatch(updateActiveEditorTabIndex(workspaceLocation, activeEditorTabIndex)),
+    [dispatch]
+  );
+  const removeEditorTabByIndex = React.useCallback(
+    (editorTabIndex: number) => dispatch(removeEditorTab(workspaceLocation, editorTabIndex)),
+    [dispatch]
+  );
+
+  const { handleEditorValueChange } = props;
+  // TODO: Hardcoded to make use of the first editor tab. Refactoring is needed for this workspace to enable Folder mode.
+  const handleFirstEditorValueChange = React.useCallback(
+    (newEditorValue: string) => handleEditorValueChange(0, newEditorValue),
+    [handleEditorValueChange]
+  );
 
   if (assessment === null || assessment!.questions.length === 0) {
     return (
@@ -242,16 +266,16 @@ const EditingWorkspace: React.FC<EditingWorkspaceProps> = props => {
   const resetWorkspaceValues = () => {
     const question: Question = assessment!.questions[formatedQuestionId()];
     let editorValue: string;
-    let editorPrepend = '';
-    let editorPostpend = '';
+    let programPrependValue = '';
+    let programPostpendValue = '';
     if (question.type === QuestionTypes.programming) {
       if (question.editorValue) {
         editorValue = question.editorValue;
       } else {
         editorValue = (question as IProgrammingQuestion).solutionTemplate as string;
       }
-      editorPrepend = (question as IProgrammingQuestion).prepend;
-      editorPostpend = (question as IProgrammingQuestion).postpend;
+      programPrependValue = (question as IProgrammingQuestion).prepend;
+      programPostpendValue = (question as IProgrammingQuestion).postpend;
     } else {
       editorValue = '//If you see this, this is a bug. Please report bug.';
     }
@@ -261,14 +285,15 @@ const EditingWorkspace: React.FC<EditingWorkspaceProps> = props => {
       editorTabs: [
         {
           value: editorValue,
-          prependValue: editorPrepend,
-          postpendValue: editorPostpend,
           highlightedLines: [],
           breakpoints: []
         }
-      ]
+      ],
+      programPrependValue,
+      programPostpendValue
     });
-    props.handleEditorValueChange(editorValue);
+    // TODO: Hardcoded to make use of the first editor tab. Refactoring is needed for this workspace to enable Folder mode.
+    props.handleEditorValueChange(0, editorValue);
   };
 
   const handleTestcaseEval = (testcase: Testcase) => {
@@ -279,7 +304,7 @@ const EditingWorkspace: React.FC<EditingWorkspaceProps> = props => {
 
   const handleSave = () => {
     // TODO: Hardcoded to make use of the first editor tab. Rewrite after editor tabs are added.
-    assessment!.questions[formatedQuestionId()].editorValue = props.editorTabs[0].value;
+    assessment!.questions[formatedQuestionId()].editorValue = editorTabs[0].value;
     setAssessment(assessment);
     setHasUnsavedChanges(false);
     storeLocalAssessment(assessment);
@@ -347,10 +372,10 @@ const EditingWorkspace: React.FC<EditingWorkspaceProps> = props => {
             assessment={currentAssessment}
             questionId={questionId}
             updateAssessment={updateEditAssessmentState}
-            // TODO: Hardcoded to make use of the first editor tab. Rewrite after editor tabs are added.
-            editorValue={props.editorTabs[0].value}
-            handleEditorValueChange={props.handleEditorValueChange}
-            handleUpdateActiveEditorTab={props.handleUpdateActiveEditorTab}
+            // TODO: Hardcoded to make use of the first editor tab. Refactoring is needed for this workspace to enable Folder mode.
+            editorValue={editorTabs[0].value}
+            handleEditorValueChange={handleFirstEditorValueChange}
+            handleUpdateWorkspace={props.handleUpdateWorkspace}
           />
         );
 
@@ -597,7 +622,11 @@ const EditingWorkspace: React.FC<EditingWorkspaceProps> = props => {
       question.type === QuestionTypes.programming
         ? {
             editorVariant: 'normal',
-            editorTabs: props.editorTabs
+            isFolderModeEnabled,
+            activeEditorTabIndex,
+            setActiveEditorTabIndex,
+            removeEditorTabByIndex,
+            editorTabs: editorTabs
               .map(convertEditorTabStateToProps)
               .map((editorTabStateProps, index) => {
                 // TODO: Hardcoded to make use of the first editor tab. Rewrite after editor tabs are added.

@@ -1,3 +1,4 @@
+import { FSModule } from 'browserfs/dist/node/core/FS';
 import {
   Context,
   findDeclaration,
@@ -37,11 +38,10 @@ import {
   BEGIN_INTERRUPT_EXECUTION,
   DEBUG_RESET,
   DEBUG_RESUME,
-  HIGHLIGHT_LINE
+  UPDATE_EDITOR_HIGHLIGHTED_LINES
 } from '../application/types/InterpreterTypes';
 import { Library, Testcase, TestcaseType, TestcaseTypes } from '../assessment/AssessmentTypes';
 import { Documentation } from '../documentation/Documentation';
-import { showFullJSDisclaimer } from '../fullJS/FullJSUtils';
 import { SideContentType } from '../sideContent/SideContentTypes';
 import { actions } from '../utils/ActionsHelper';
 import DisplayBufferService from '../utils/DisplayBufferService';
@@ -57,6 +57,7 @@ import {
 } from '../utils/JsSlangHelper';
 import { showSuccessMessage, showWarningMessage } from '../utils/NotificationsHelper';
 import { makeExternalBuiltins as makeSourcerorExternalBuiltins } from '../utils/SourcerorHelper';
+import { showFullJSDisclaimer, showFullTSDisclaimer } from '../utils/WarningDialogHelper';
 import { notifyProgramEvaluated } from '../workspace/WorkspaceActions';
 import {
   ADD_HTML_CONSOLE_ERROR,
@@ -74,6 +75,8 @@ import {
   PROMPT_AUTOCOMPLETE,
   SicpWorkspaceState,
   TOGGLE_EDITOR_AUTORUN,
+  TOGGLE_FOLDER_MODE,
+  UPDATE_EDITOR_VALUE,
   WorkspaceLocation
 } from '../workspace/WorkspaceTypes';
 import { safeTakeEvery as takeEvery, safeTakeLeading as takeLeading } from './SafeEffects';
@@ -90,6 +93,51 @@ export default function* WorkspaceSaga(): SagaIterator {
     }
   );
 
+  yield takeEvery(
+    TOGGLE_FOLDER_MODE,
+    function* (action: ReturnType<typeof actions.toggleFolderMode>) {
+      const workspaceLocation = action.payload.workspaceLocation;
+      const isFolderModeEnabled: boolean = yield select(
+        (state: OverallState) => state.workspaces[workspaceLocation].isFolderModeEnabled
+      );
+      const warningMessage = `Folder mode ${isFolderModeEnabled ? 'enabled' : 'disabled'}`;
+      yield call(showWarningMessage, warningMessage, 750);
+    }
+  );
+
+  // Mirror editor updates to the associated file in the filesystem.
+  yield takeEvery(
+    UPDATE_EDITOR_VALUE,
+    function* (action: ReturnType<typeof actions.updateEditorValue>) {
+      const workspaceLocation = action.payload.workspaceLocation;
+      const editorTabIndex = action.payload.editorTabIndex;
+
+      const filePath: string | undefined = yield select(
+        (state: OverallState) =>
+          state.workspaces[workspaceLocation].editorTabs[editorTabIndex].filePath
+      );
+      // If the code does not have an associated file, do nothing.
+      if (filePath === undefined) {
+        return;
+      }
+
+      const fileSystem: FSModule | null = yield select(
+        (state: OverallState) => state.fileSystem.inBrowserFileSystem
+      );
+      // If the file system is not initialised, do nothing.
+      if (fileSystem === null) {
+        return;
+      }
+
+      fileSystem.writeFile(filePath, action.payload.newEditorValue, err => {
+        if (err) {
+          console.error(err);
+        }
+      });
+      yield;
+    }
+  );
+
   yield takeEvery(EVAL_EDITOR, function* (action: ReturnType<typeof actions.evalEditor>) {
     const workspaceLocation = action.payload.workspaceLocation;
     yield* evalEditor(workspaceLocation);
@@ -103,8 +151,8 @@ export default function* WorkspaceSaga(): SagaIterator {
       context = yield select((state: OverallState) => state.workspaces[workspaceLocation].context);
 
       const code: string = yield select((state: OverallState) => {
+        const prependCode = state.workspaces[workspaceLocation].programPrependValue;
         // TODO: Hardcoded to make use of the first editor tab. Rewrite after editor tabs are added.
-        const prependCode = state.workspaces[workspaceLocation].editorTabs[0].prependValue;
         const editorCode = state.workspaces[workspaceLocation].editorTabs[0].value;
         return [prependCode, editorCode] as [string, string];
       });
@@ -204,7 +252,8 @@ export default function* WorkspaceSaga(): SagaIterator {
     /** Clear the context, with the same chapter and externalSymbols as before. */
     yield put(actions.clearReplOutput(workspaceLocation));
     context = yield select((state: OverallState) => state.workspaces[workspaceLocation].context);
-    yield put(actions.highlightEditorLine([], workspaceLocation));
+    // TODO: Hardcoded to make use of the first editor tab. Rewrite after editor tabs are added.
+    yield put(actions.setEditorHighlightedLines(workspaceLocation, 0, []));
     yield call(evalCode, code, context, execTime, workspaceLocation, DEBUG_RESUME);
   });
 
@@ -212,19 +261,22 @@ export default function* WorkspaceSaga(): SagaIterator {
     const workspaceLocation = action.payload.workspaceLocation;
     context = yield select((state: OverallState) => state.workspaces[workspaceLocation].context);
     yield put(actions.clearReplOutput(workspaceLocation));
-    yield put(actions.highlightEditorLine([], workspaceLocation));
+    // TODO: Hardcoded to make use of the first editor tab. Rewrite after editor tabs are added.
+    yield put(actions.setEditorHighlightedLines(workspaceLocation, 0, []));
     context.runtime.break = false;
     lastDebuggerResult = undefined;
   });
 
   yield takeEvery(
-    HIGHLIGHT_LINE,
-    function* (action: ReturnType<typeof actions.highlightEditorLine>) {
-      const highlightedLines = action.payload.highlightedLines;
-      if (highlightedLines.length === 0) {
+    UPDATE_EDITOR_HIGHLIGHTED_LINES,
+    function* (action: ReturnType<typeof actions.setEditorHighlightedLines>) {
+      const newHighlightedLines = action.payload.newHighlightedLines;
+      if (newHighlightedLines.length === 0) {
         highlightClean();
       } else {
-        highlightLine(highlightedLines[0]);
+        newHighlightedLines.forEach(([startRow, _endRow]: [number, number]) =>
+          highlightLine(startRow)
+        );
       }
       yield;
     }
@@ -257,6 +309,8 @@ export default function* WorkspaceSaga(): SagaIterator {
     const toChangeChapter: boolean =
       newChapter === Chapter.FULL_JS
         ? chapterChanged && (yield call(showFullJSDisclaimer))
+        : newChapter === Chapter.FULL_TS
+        ? chapterChanged && (yield call(showFullTSDisclaimer))
         : chapterChanged;
 
     if (toChangeChapter) {
@@ -370,8 +424,9 @@ export default function* WorkspaceSaga(): SagaIterator {
         column: action.payload.cursorPosition.column
       });
       if (result) {
+        // TODO: Hardcoded to make use of the first editor tab. Rewrite after editor tabs are added.
         yield put(
-          actions.moveCursor(action.payload.workspaceLocation, {
+          actions.moveCursor(action.payload.workspaceLocation, 0, {
             row: result.start.line - 1,
             column: result.start.column
           })
@@ -416,10 +471,12 @@ function* updateInspector(workspaceLocation: WorkspaceLocation): SagaIterator {
   try {
     const start = lastDebuggerResult.context.runtime.nodes[0].loc.start.line - 1;
     const end = lastDebuggerResult.context.runtime.nodes[0].loc.end.line - 1;
-    yield put(actions.highlightEditorLine([start, end], workspaceLocation));
+    // TODO: Hardcoded to make use of the first editor tab. Rewrite after editor tabs are added.
+    yield put(actions.setEditorHighlightedLines(workspaceLocation, 0, [[start, end]]));
     visualizeEnv(lastDebuggerResult);
   } catch (e) {
-    yield put(actions.highlightEditorLine([], workspaceLocation));
+    // TODO: Hardcoded to make use of the first editor tab. Rewrite after editor tabs are added.
+    yield put(actions.setEditorHighlightedLines(workspaceLocation, 0, []));
     // most likely harmless, we can pretty much ignore this.
     // half of the time this comes from execution ending or a stack overflow and
     // the context goes missing.
@@ -468,17 +525,91 @@ export function* dumpDisplayBuffer(
   yield put(actions.handleConsoleLog(workspaceLocation, ...DisplayBufferService.dump()));
 }
 
+/**
+ * Inserts debugger statements into the code based off the breakpoints set by the user.
+ *
+ * For every breakpoint, a corresponding `debugger;` statement is inserted at the start
+ * of the line that the breakpoint is placed at. The `debugger;` statement is available
+ * in both JavaScript and Source, and invokes any available debugging functionality.
+ * See https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/debugger
+ * for more information.
+ *
+ * While it is typically the case that statements are contained within a single line,
+ * this is not necessarily true. For example, the code `const x = 3;` can be rewritten as:
+ * ```
+ * const x
+ * = 3;
+ * ```
+ * A breakpoint on the line `= 3;` would thus result in a `debugger;` statement being
+ * added in the middle of another statement. The resulting code would then be syntactically
+ * invalid.
+ *
+ * To work around this issue, we parse the code to check for syntax errors whenever we
+ * add a `debugger;` statement. If the addition of a `debugger;` statement results in
+ * invalid code, an error message is outputted with the line number of the offending
+ * breakpoint.
+ *
+ * @param workspaceLocation The location of the current workspace.
+ * @param code              The code which debugger statements should be inserted into.
+ * @param breakpoints       The breakpoints corresponding to the code.
+ * @param context           The context in which the code should be evaluated in.
+ */
+function* insertDebuggerStatements(
+  workspaceLocation: WorkspaceLocation,
+  code: string,
+  breakpoints: string[],
+  context: Context
+): Generator<StrictEffect, string, any> {
+  // Check for initial syntax errors.
+  if (isSourceLanguage(context.chapter)) {
+    parse(code, context);
+  }
+
+  // If there are syntax errors, we do not insert the debugger statements.
+  // Instead, we let the code be evaluated so that the error messages are printed.
+  if (context.errors.length > 0) {
+    context.errors = [];
+    return code;
+  }
+
+  // Otherwise, we step through the breakpoints one by one & try to insert
+  // corresponding debugger statements.
+  const lines = code.split('\n');
+  let transformedCode = code;
+  for (const breakpoint in breakpoints) {
+    // Add a debugger statement to the line with the breakpoint.
+    const breakpointLineNum: number = parseInt(breakpoint);
+    lines[breakpointLineNum] = 'debugger;' + lines[breakpointLineNum];
+    // Reconstruct the code & check that the code is still syntactically valid.
+    // The insertion of the debugger statement is potentially invalid if it
+    // happens within an existing statement (that is split across lines).
+    transformedCode = lines.join('\n');
+    if (isSourceLanguage(context.chapter)) {
+      parse(transformedCode, context);
+    }
+    // If the resulting code is no longer syntactically valid, throw an error.
+    if (context.errors.length > 0) {
+      const errorMessage = `Hint: Misplaced breakpoint at line ${breakpointLineNum + 1}.`;
+      yield put(actions.sendReplInputToOutput(errorMessage, workspaceLocation));
+      return code;
+    }
+  }
+
+  // Finally, return the transformed code with debugger statements added.
+  return transformedCode;
+}
+
 export function* evalEditor(
   workspaceLocation: WorkspaceLocation
 ): Generator<StrictEffect, void, any> {
-  const [prepend, editorCode, execTime, remoteExecutionSession]: [
+  const [prepend, code, execTime, remoteExecutionSession]: [
     string,
     string,
     number,
     DeviceSession | undefined
   ] = yield select((state: OverallState) => [
+    state.workspaces[workspaceLocation].programPrependValue,
     // TODO: Hardcoded to make use of the first editor tab. Rewrite after editor tabs are added.
-    state.workspaces[workspaceLocation].editorTabs[0].prependValue,
     state.workspaces[workspaceLocation].editorTabs[0].value,
     state.workspaces[workspaceLocation].execTime,
     state.session.remoteExecutionSession
@@ -487,48 +618,27 @@ export function* evalEditor(
   yield put(actions.addEvent([EventType.RUN_CODE]));
 
   if (remoteExecutionSession && remoteExecutionSession.workspace === workspaceLocation) {
-    yield put(actions.remoteExecRun(editorCode));
+    yield put(actions.remoteExecRun(code));
   } else {
     // End any code that is running right now.
     yield put(actions.beginInterruptExecution(workspaceLocation));
-    yield* clearContext(workspaceLocation, editorCode);
+    yield* clearContext(workspaceLocation, code);
     yield put(actions.clearReplOutput(workspaceLocation));
     const context = yield select(
       (state: OverallState) => state.workspaces[workspaceLocation].context
     );
-    let value = editorCode;
-    // Check for initial syntax errors. If there are errors, we continue with
-    // eval and let it print the error messages.
-    if (isSourceLanguage(context.chapter)) {
-      parse(value, context);
-    }
-    if (!context.errors.length) {
-      // Otherwise we step through the breakpoints one by one and check them.
-      const exploded = editorCode.split('\n');
-      const breakpoints: string[] = yield select(
-        // TODO: Hardcoded to make use of the first editor tab. Rewrite after editor tabs are added.
-        (state: OverallState) => state.workspaces[workspaceLocation].editorTabs[0].breakpoints
-      );
-      for (const b in breakpoints) {
-        if (typeof b !== 'string') {
-          continue;
-        }
+    const breakpoints: string[] = yield select(
+      // TODO: Hardcoded to make use of the first editor tab. Rewrite after editor tabs are added.
+      (state: OverallState) => state.workspaces[workspaceLocation].editorTabs[0].breakpoints
+    );
 
-        const index: number = +b;
-        context.errors = [];
-        exploded[index] = 'debugger;' + exploded[index];
-        value = exploded.join('\n');
-        if (isSourceLanguage(context.chapter)) {
-          parse(value, context);
-        }
-        if (context.errors.length) {
-          const msg = 'Hint: Misplaced breakpoint at line ' + (index + 1) + '.';
-          yield put(actions.sendReplInputToOutput(msg, workspaceLocation));
-        }
-      }
-    }
-    // Clear the errors on the context before any further evaluation.
-    context.errors = [];
+    // Insert debugger statements at the lines of the program with a breakpoint.
+    const transformedCode = yield* insertDebuggerStatements(
+      workspaceLocation,
+      code,
+      breakpoints,
+      context
+    );
 
     // Evaluate the prepend silently with a privileged context, if it exists
     if (prepend.length) {
@@ -538,7 +648,7 @@ export function* evalEditor(
       yield* blockExtraMethods(elevatedContext, context, execTime, workspaceLocation);
     }
 
-    yield call(evalCode, value, context, execTime, workspaceLocation, EVAL_EDITOR);
+    yield call(evalCode, transformedCode, context, execTime, workspaceLocation, EVAL_EDITOR);
   }
 }
 
@@ -548,10 +658,10 @@ export function* runTestCase(
 ): Generator<StrictEffect, boolean, any> {
   const [prepend, value, postpend, testcase]: [string, string, string, string] = yield select(
     (state: OverallState) => {
+      const prepend = state.workspaces[workspaceLocation].programPrependValue;
+      const postpend = state.workspaces[workspaceLocation].programPostpendValue;
       // TODO: Hardcoded to make use of the first editor tab. Rewrite after editor tabs are added.
-      const prepend = state.workspaces[workspaceLocation].editorTabs[0].prependValue;
       const value = state.workspaces[workspaceLocation].editorTabs[0].value;
-      const postpend = state.workspaces[workspaceLocation].editorTabs[0].postpendValue;
       const testcase = state.workspaces[workspaceLocation].editorTestcases[index].program;
       return [prepend, value, postpend, testcase] as [string, string, string, string];
     }
@@ -776,7 +886,8 @@ export function* evalCode(
   if (
     result.status !== 'suspended' &&
     result.status !== 'finished' &&
-    result.status !== 'suspended-non-det'
+    result.status !== 'suspended-non-det' &&
+    result.status !== 'suspended-ec-eval'
   ) {
     yield* dumpDisplayBuffer(workspaceLocation);
     yield put(actions.evalInterpreterError(context.errors, workspaceLocation));
@@ -798,7 +909,7 @@ export function* evalCode(
     }
     yield put(actions.addEvent(events));
     return;
-  } else if (result.status === 'suspended') {
+  } else if (result.status === 'suspended' || result.status === 'suspended-ec-eval') {
     yield put(actions.endDebuggerPause(workspaceLocation));
     yield put(actions.evalInterpreterSuccess('Breakpoint hit!', workspaceLocation));
     return;

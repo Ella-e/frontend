@@ -2,9 +2,11 @@ import { Chapter, Variant } from 'js-slang/dist/types';
 
 import { createDefaultWorkspace, SALanguage } from '../../application/ApplicationTypes';
 import { ExternalLibraryName } from '../../application/types/ExternalTypes';
-import { HIGHLIGHT_LINE } from '../../application/types/InterpreterTypes';
+import { UPDATE_EDITOR_HIGHLIGHTED_LINES } from '../../application/types/InterpreterTypes';
 import { Library } from '../../assessment/AssessmentTypes';
+import { HighlightedLines } from '../../editor/EditorTypes';
 import {
+  addEditorTab,
   beginClearContext,
   browseReplHistoryDown,
   browseReplHistoryUp,
@@ -20,16 +22,22 @@ import {
   evalRepl,
   evalTestcase,
   externalLibrarySelect,
-  highlightEditorLine,
   moveCursor,
   navigateToDeclaration,
+  removeEditorTab,
+  removeEditorTabForFile,
+  removeEditorTabsForDirectory,
   resetTestcase,
   resetWorkspace,
   sendReplInputToOutput,
   setEditorBreakpoint,
+  setEditorHighlightedLines,
+  shiftEditorTab,
   toggleEditorAutorun,
+  toggleFolderMode,
   toggleUsingSubst,
   updateActiveEditorTab,
+  updateActiveEditorTabIndex,
   updateCurrentAssessmentId,
   updateCurrentSubmissionId,
   updateEditorValue,
@@ -38,6 +46,7 @@ import {
   updateSublanguage
 } from '../WorkspaceActions';
 import {
+  ADD_EDITOR_TAB,
   BEGIN_CLEAR_CONTEXT,
   BROWSE_REPL_HISTORY_DOWN,
   BROWSE_REPL_HISTORY_UP,
@@ -56,12 +65,18 @@ import {
   MOVE_CURSOR,
   NAV_DECLARATION,
   PLAYGROUND_EXTERNAL_SELECT,
+  REMOVE_EDITOR_TAB,
+  REMOVE_EDITOR_TAB_FOR_FILE,
+  REMOVE_EDITOR_TABS_FOR_DIRECTORY,
   RESET_TESTCASE,
   RESET_WORKSPACE,
   SEND_REPL_INPUT_TO_OUTPUT,
+  SHIFT_EDITOR_TAB,
   TOGGLE_EDITOR_AUTORUN,
+  TOGGLE_FOLDER_MODE,
   TOGGLE_USING_SUBST,
   UPDATE_ACTIVE_EDITOR_TAB,
+  UPDATE_ACTIVE_EDITOR_TAB_INDEX,
   UPDATE_CURRENT_ASSESSMENT_ID,
   UPDATE_CURRENT_SUBMISSION_ID,
   UPDATE_EDITOR_BREAKPOINTS,
@@ -256,8 +271,30 @@ test('evalTestcase generates correct action object', () => {
   });
 });
 
+test('toggleFolderMode generates correct action object', () => {
+  const action = toggleFolderMode(gradingWorkspace);
+  expect(action).toEqual({
+    type: TOGGLE_FOLDER_MODE,
+    payload: {
+      workspaceLocation: gradingWorkspace
+    }
+  });
+});
+
+test('updateActiveEditorTabIndex generates correct action object', () => {
+  const activeEditorTabIndex = 3;
+  const action = updateActiveEditorTabIndex(playgroundWorkspace, activeEditorTabIndex);
+  expect(action).toEqual({
+    type: UPDATE_ACTIVE_EDITOR_TAB_INDEX,
+    payload: {
+      workspaceLocation: playgroundWorkspace,
+      activeEditorTabIndex
+    }
+  });
+});
+
 test('updateActiveEditorTab generates correct action object', () => {
-  const newEditorTab: Partial<EditorTabState> = { prependValue: 'Hello', postpendValue: 'World' };
+  const newEditorTab: Partial<EditorTabState> = { value: 'Hello World' };
   const action = updateActiveEditorTab(assessmentWorkspace, newEditorTab);
   expect(action).toEqual({
     type: UPDATE_ACTIVE_EDITOR_TAB,
@@ -269,37 +306,128 @@ test('updateActiveEditorTab generates correct action object', () => {
 });
 
 test('updateEditorValue generates correct action object', () => {
+  const editorTabIndex = 3;
   const newEditorValue = 'new_editor_value';
-  const action = updateEditorValue(newEditorValue, assessmentWorkspace);
+  const action = updateEditorValue(assessmentWorkspace, editorTabIndex, newEditorValue);
   expect(action).toEqual({
     type: UPDATE_EDITOR_VALUE,
     payload: {
-      newEditorValue,
-      workspaceLocation: assessmentWorkspace
+      workspaceLocation: assessmentWorkspace,
+      editorTabIndex,
+      newEditorValue
     }
   });
 });
 
 test('setEditorBreakpoint generates correct action object', () => {
-  const breakpoints = ['1', '2', '5'];
-  const action = setEditorBreakpoint(breakpoints, gradingWorkspace);
+  const editorTabIndex = 3;
+  const newBreakpoints = ['ace_breakpoint', 'ace_breakpoint'];
+  const action = setEditorBreakpoint(gradingWorkspace, editorTabIndex, newBreakpoints);
   expect(action).toEqual({
     type: UPDATE_EDITOR_BREAKPOINTS,
     payload: {
-      breakpoints,
-      workspaceLocation: gradingWorkspace
+      workspaceLocation: gradingWorkspace,
+      editorTabIndex,
+      newBreakpoints
     }
   });
 });
 
-test('highlightEditorLine generates correct action object', () => {
-  const highlightedLines = [1, 2, 5];
-  const action = highlightEditorLine(highlightedLines, playgroundWorkspace);
+test('setEditorHighlightedLines generates correct action object', () => {
+  const editorTabIndex = 3;
+  const newHighlightedLines: HighlightedLines[] = [
+    [1, 2],
+    [5, 6]
+  ];
+  const action = setEditorHighlightedLines(
+    playgroundWorkspace,
+    editorTabIndex,
+    newHighlightedLines
+  );
   expect(action).toEqual({
-    type: HIGHLIGHT_LINE,
+    type: UPDATE_EDITOR_HIGHLIGHTED_LINES,
     payload: {
-      highlightedLines,
-      workspaceLocation: playgroundWorkspace
+      workspaceLocation: playgroundWorkspace,
+      editorTabIndex,
+      newHighlightedLines
+    }
+  });
+});
+
+test('moveCursor generates correct action object', () => {
+  const editorTabIndex = 3;
+  const newCursorPosition = { row: 0, column: 0 };
+  const action = moveCursor(playgroundWorkspace, editorTabIndex, newCursorPosition);
+  expect(action).toEqual({
+    type: MOVE_CURSOR,
+    payload: {
+      workspaceLocation: playgroundWorkspace,
+      editorTabIndex,
+      newCursorPosition
+    }
+  });
+});
+
+test('addEditorTab generates correct action object', () => {
+  const filePath = '/playground/program.js';
+  const editorValue = 'Hello World!';
+  const action = addEditorTab(playgroundWorkspace, filePath, editorValue);
+  expect(action).toEqual({
+    type: ADD_EDITOR_TAB,
+    payload: {
+      workspaceLocation: playgroundWorkspace,
+      filePath,
+      editorValue
+    }
+  });
+});
+
+test('shiftEditorTab generates correct action object', () => {
+  const previousEditorTabIndex = 3;
+  const newEditorTabIndex = 1;
+  const action = shiftEditorTab(playgroundWorkspace, previousEditorTabIndex, newEditorTabIndex);
+  expect(action).toEqual({
+    type: SHIFT_EDITOR_TAB,
+    payload: {
+      workspaceLocation: playgroundWorkspace,
+      previousEditorTabIndex,
+      newEditorTabIndex
+    }
+  });
+});
+
+test('removeEditorTab generates correct action object', () => {
+  const editorTabIndex = 3;
+  const action = removeEditorTab(playgroundWorkspace, editorTabIndex);
+  expect(action).toEqual({
+    type: REMOVE_EDITOR_TAB,
+    payload: {
+      workspaceLocation: playgroundWorkspace,
+      editorTabIndex
+    }
+  });
+});
+
+test('removeEditorTabForFile generates correct action object', () => {
+  const removedFilePath = '/dir1/a.js';
+  const action = removeEditorTabForFile(playgroundWorkspace, removedFilePath);
+  expect(action).toEqual({
+    type: REMOVE_EDITOR_TAB_FOR_FILE,
+    payload: {
+      workspaceLocation: playgroundWorkspace,
+      removedFilePath
+    }
+  });
+});
+
+test('removeEditorTabsForDirectory generates correct action object', () => {
+  const removedDirectoryPath = '/dir1';
+  const action = removeEditorTabsForDirectory(playgroundWorkspace, removedDirectoryPath);
+  expect(action).toEqual({
+    type: REMOVE_EDITOR_TABS_FOR_DIRECTORY,
+    payload: {
+      workspaceLocation: playgroundWorkspace,
+      removedDirectoryPath
     }
   });
 });
@@ -406,18 +534,6 @@ test('navigateToDeclaration generates correct action object', () => {
   const action = navigateToDeclaration(playgroundWorkspace, cursorPosition);
   expect(action).toEqual({
     type: NAV_DECLARATION,
-    payload: {
-      workspaceLocation: playgroundWorkspace,
-      cursorPosition
-    }
-  });
-});
-
-test('moveCursor generates correct action object', () => {
-  const cursorPosition = { row: 0, column: 0 };
-  const action = moveCursor(playgroundWorkspace, cursorPosition);
-  expect(action).toEqual({
-    type: MOVE_CURSOR,
     payload: {
       workspaceLocation: playgroundWorkspace,
       cursorPosition

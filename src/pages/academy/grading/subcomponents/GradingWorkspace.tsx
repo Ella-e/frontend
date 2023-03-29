@@ -44,8 +44,10 @@ export type DispatchProps = {
   handleClearContext: (library: Library, shouldInitLibrary: boolean) => void;
   handleDeclarationNavigate: (cursorPosition: Position) => void;
   handleEditorEval: () => void;
-  handleEditorValueChange: (val: string) => void;
-  handleEditorUpdateBreakpoints: (breakpoints: string[]) => void;
+  handleSetActiveEditorTabIndex: (activeEditorTabIndex: number | null) => void;
+  handleRemoveEditorTabByIndex: (editorTabIndex: number) => void;
+  handleEditorValueChange: (editorTabIndex: number, newEditorValue: string) => void;
+  handleEditorUpdateBreakpoints: (editorTabIndex: number, newBreakpoints: string[]) => void;
   handleGradingFetch: (submissionId: number) => void;
   handleInterruptEval: () => void;
   handleReplEval: () => void;
@@ -73,6 +75,7 @@ export type OwnProps = {
 export type StateProps = {
   autogradingResults: AutogradingResult[];
   grading?: Grading;
+  isFolderModeEnabled: boolean;
   activeEditorTabIndex: number | null;
   editorTabs: EditorTabState[];
   editorTestcases: Testcase[];
@@ -130,7 +133,8 @@ class GradingWorkspace extends React.Component<GradingWorkspaceProps, State> {
       }
     }
 
-    this.props.handleEditorValueChange(answer);
+    // TODO: Hardcoded to make use of the first editor tab. Refactoring is needed for this workspace to enable Folder mode.
+    this.props.handleEditorValueChange(0, answer);
   }
 
   /**
@@ -183,6 +187,10 @@ class GradingWorkspace extends React.Component<GradingWorkspaceProps, State> {
         question.type === QuestionTypes.programming || question.type === QuestionTypes.voting
           ? {
               editorVariant: 'normal',
+              isFolderModeEnabled: this.props.isFolderModeEnabled,
+              activeEditorTabIndex: this.props.activeEditorTabIndex,
+              setActiveEditorTabIndex: this.props.handleSetActiveEditorTabIndex,
+              removeEditorTabByIndex: this.props.handleRemoveEditorTabByIndex,
               editorTabs: this.props.editorTabs.map(convertEditorTabStateToProps),
               editorSessionId: '',
               handleDeclarationNavigate: this.props.handleDeclarationNavigate,
@@ -244,15 +252,15 @@ class GradingWorkspace extends React.Component<GradingWorkspaceProps, State> {
 
     let autogradingResults: AutogradingResult[] = [];
     let editorValue: string = '';
-    let editorPrepend: string = '';
-    let editorPostpend: string = '';
+    let programPrependValue: string = '';
+    let programPostpendValue: string = '';
     let editorTestcases: Testcase[] = [];
 
     if (question.type === QuestionTypes.programming) {
       const questionData = question as AnsweredQuestion;
       autogradingResults = questionData.autogradingResults;
-      editorPrepend = questionData.prepend;
-      editorPostpend = questionData.postpend;
+      programPrependValue = questionData.prepend;
+      programPostpendValue = questionData.postpend;
       editorTestcases = questionData.testcases;
 
       editorValue = questionData.answer as string;
@@ -261,7 +269,8 @@ class GradingWorkspace extends React.Component<GradingWorkspaceProps, State> {
       }
     }
 
-    props.handleEditorUpdateBreakpoints([]);
+    // TODO: Hardcoded to make use of the first editor tab. Refactoring is needed for this workspace to enable Folder mode.
+    props.handleEditorUpdateBreakpoints(0, []);
     props.handleUpdateCurrentSubmissionId(submissionId, questionId);
     props.handleResetWorkspace({
       autogradingResults,
@@ -269,12 +278,12 @@ class GradingWorkspace extends React.Component<GradingWorkspaceProps, State> {
       editorTabs: [
         {
           value: editorValue,
-          prependValue: editorPrepend,
-          postpendValue: editorPostpend,
           highlightedLines: [],
           breakpoints: []
         }
       ],
+      programPrependValue,
+      programPostpendValue,
       editorTestcases
     });
     props.handleChangeExecTime(
@@ -283,7 +292,8 @@ class GradingWorkspace extends React.Component<GradingWorkspaceProps, State> {
     props.handleClearContext(question.library, true);
     props.handleUpdateHasUnsavedChanges(false);
     if (editorValue) {
-      props.handleEditorValueChange(editorValue);
+      // TODO: Hardcoded to make use of the first editor tab. Refactoring is needed for this workspace to enable Folder mode.
+      props.handleEditorValueChange(0, editorValue);
     }
   }
 

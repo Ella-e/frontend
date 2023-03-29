@@ -17,8 +17,8 @@ const mapStateToProps: MapStateToProps<StateProps, OwnProps, OverallState> = (st
     courseId: state.session.courseId,
     assessment: state.session.assessments.get(props.assessmentId),
     autogradingResults: state.workspaces.assessment.autogradingResults,
-    activeEditorTabIndex: state.workspaces.assessment.activeEditorTabIndex,
-    editorTabs: state.workspaces.assessment.editorTabs,
+    programPrependValue: state.workspaces.assessment.programPrependValue,
+    programPostpendValue: state.workspaces.assessment.programPostpendValue,
     editorTestcases: state.workspaces.assessment.editorTestcases,
     hasUnsavedChanges: state.workspaces.assessment.hasUnsavedChanges,
     isRunning: state.workspaces.assessment.isRunning,
@@ -37,9 +37,10 @@ const workspaceLocation: WorkspaceLocation = 'assessment';
 const mapDispatchToProps: MapDispatchToProps<DispatchProps, {}> = (dispatch: Dispatch) =>
   bindActionCreators(
     {
-      handleEditorValueChange: (val: string) => updateEditorValue(val, workspaceLocation),
-      handleEditorUpdateBreakpoints: (breakpoints: string[]) =>
-        setEditorBreakpoint(breakpoints, workspaceLocation),
+      handleEditorValueChange: (editorTabIndex: number, newEditorValue: string) =>
+        updateEditorValue(workspaceLocation, editorTabIndex, newEditorValue),
+      handleEditorUpdateBreakpoints: (editorTabIndex: number, newBreakpoints: string[]) =>
+        setEditorBreakpoint(workspaceLocation, editorTabIndex, newBreakpoints),
       handleReplEval: () => evalRepl(workspaceLocation),
       handleSave: submitAnswer,
       handleUpdateHasUnsavedChanges: (hasUnsavedChanges: boolean) =>

@@ -22,8 +22,6 @@ const mapStateToProps: MapStateToProps<StateProps, {}, OverallState> = state => 
   audioUrl: state.workspaces.sourcecast.audioUrl,
   currentPlayerTime: state.workspaces.sourcecast.currentPlayerTime,
   codeDeltasToApply: state.workspaces.sourcecast.codeDeltasToApply,
-  activeEditorTabIndex: state.workspaces.sourcereel.activeEditorTabIndex,
-  editorTabs: state.workspaces.sourcereel.editorTabs,
   enableDebugging: state.workspaces.sourcereel.enableDebugging,
   externalLibraryName: state.workspaces.sourcereel.externalLibrary,
   inputToApply: state.workspaces.sourcecast.inputToApply,
@@ -53,7 +51,9 @@ const mapDispatchToProps: MapDispatchToProps<DispatchProps, {}> = (dispatch: Dis
     {
       handleChapterSelect: (chapter: Chapter) => chapterSelect(chapter, Variant.DEFAULT, location),
       handleEditorEval: () => evalEditor(location),
-      handleEditorValueChange: (val: string) => updateEditorValue(val, location),
+      // TODO: Hardcoded to make use of the first editor tab. Refactoring is needed for this workspace to enable Folder mode.
+      handleEditorValueChange: (newEditorValue: string) =>
+        updateEditorValue(location, 0, newEditorValue),
       handleExternalSelect: (externalLibraryName: ExternalLibraryName) =>
         externalLibrarySelect(externalLibraryName, location),
       handleRecordInput: (input: Input) => recordInput(input, location),

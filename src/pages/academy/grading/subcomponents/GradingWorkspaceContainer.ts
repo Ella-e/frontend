@@ -23,10 +23,12 @@ import {
   evalTestcase,
   navigateToDeclaration,
   promptAutocomplete,
+  removeEditorTab,
   resetWorkspace,
   runAllTestcases,
   sendReplInputToOutput,
   setEditorBreakpoint,
+  updateActiveEditorTabIndex,
   updateCurrentSubmissionId,
   updateEditorValue,
   updateHasUnsavedChanges,
@@ -40,6 +42,7 @@ const workspaceLocation: WorkspaceLocation = 'grading';
 const mapStateToProps: MapStateToProps<StateProps, OwnProps, OverallState> = (state, props) => {
   return {
     autogradingResults: state.workspaces.grading.autogradingResults,
+    isFolderModeEnabled: state.workspaces.grading.isFolderModeEnabled,
     activeEditorTabIndex: state.workspaces.grading.activeEditorTabIndex,
     editorTabs: state.workspaces.grading.editorTabs,
     editorTestcases: state.workspaces.grading.editorTestcases,
@@ -67,9 +70,14 @@ const mapDispatchToProps: MapDispatchToProps<DispatchProps, {}> = (dispatch: Dis
       handleDeclarationNavigate: (cursorPosition: Position) =>
         navigateToDeclaration(workspaceLocation, cursorPosition),
       handleEditorEval: () => evalEditor(workspaceLocation),
-      handleEditorValueChange: (val: string) => updateEditorValue(val, workspaceLocation),
-      handleEditorUpdateBreakpoints: (breakpoints: string[]) =>
-        setEditorBreakpoint(breakpoints, workspaceLocation),
+      handleSetActiveEditorTabIndex: (activeEditorTabIndex: number | null) =>
+        updateActiveEditorTabIndex(workspaceLocation, activeEditorTabIndex),
+      handleRemoveEditorTabByIndex: (editorTabIndex: number) =>
+        removeEditorTab(workspaceLocation, editorTabIndex),
+      handleEditorValueChange: (editorTabIndex: number, newEditorValue: string) =>
+        updateEditorValue(workspaceLocation, 0, newEditorValue),
+      handleEditorUpdateBreakpoints: (editorTabIndex: number, newBreakpoints: string[]) =>
+        setEditorBreakpoint(workspaceLocation, editorTabIndex, newBreakpoints),
       handleGradingFetch: fetchGrading,
       handleInterruptEval: () => beginInterruptExecution(workspaceLocation),
       handleReplEval: () => evalRepl(workspaceLocation),

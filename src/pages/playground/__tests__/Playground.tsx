@@ -13,10 +13,9 @@ const baseProps = assertType<PlaygroundProps>()({
   isRunning: false,
   isDebugging: false,
   enableDebugging: true,
-  activeEditorTabIndex: 0,
-  editorTabs: [
-    { value: '', prependValue: '', postpendValue: '', highlightedLines: [], breakpoints: [] }
-  ],
+  editorTabs: [{ value: '', highlightedLines: [], breakpoints: [] }],
+  programPrependValue: '',
+  programPostpendValue: '',
   editorSessionId: '',
   isEditorAutorun: false,
   sideContentHeight: 40,
@@ -32,8 +31,8 @@ const baseProps = assertType<PlaygroundProps>()({
   githubSaveInfo: { repoName: '', filePath: '' },
   handleChangeExecTime: (execTime: number) => {},
   handleChapterSelect: (chapter: Chapter) => {},
-  handleEditorValueChange: () => {},
-  handleEditorUpdateBreakpoints: (breakpoints: string[]) => {},
+  handleEditorValueChange: (editorTabIndex: number, newEditorValue: string) => {},
+  handleEditorUpdateBreakpoints: (editorTabIndex: number, newBreakpoints: string[]) => {},
   handleReplEval: () => {},
   handleReplOutputClear: () => {},
   handleUsingSubst: (usingSubst: boolean) => {}

@@ -5,12 +5,23 @@ import { OverallState } from '../commons/application/ApplicationTypes';
 import { ExternalLibraryName } from '../commons/application/types/ExternalTypes';
 import { SessionState } from '../commons/application/types/SessionTypes';
 import { showWarningMessage } from '../commons/utils/NotificationsHelper';
+import { EditorTabState } from '../commons/workspace/WorkspaceTypes';
 import { AchievementItem } from '../features/achievement/AchievementTypes';
+
+// In JSON, missing keys & keys with the value 'null' are both
+// deserialised into 'null'. In order to differentiate between
+// the two cases, we wrap nullable values in an object. Missing
+// keys would then be deserialised as 'null' while keys with
+// the value 'null' would be deserialised as { value: null }.
+export type NullableValue<T> = {
+  value: T | null;
+};
 
 export type SavedState = {
   session: Partial<SessionState>;
   achievements: AchievementItem[];
-  playgroundEditorValue: string;
+  playgroundActiveEditorTabIndex: NullableValue<number>;
+  playgroundEditorTabs: EditorTabState[];
   playgroundIsEditorAutorun: boolean;
   playgroundSourceChapter: number;
   playgroundSourceVariant: Variant;
@@ -58,8 +69,10 @@ export const saveState = (state: OverallState) => {
         githubAccessToken: state.session.githubAccessToken
       },
       achievements: state.achievement.achievements,
-      // TODO: Hardcoded to make use of the first editor tab. Rewrite after editor tabs are added.
-      playgroundEditorValue: state.workspaces.playground.editorTabs[0].value,
+      playgroundActiveEditorTabIndex: {
+        value: state.workspaces.playground.activeEditorTabIndex
+      },
+      playgroundEditorTabs: state.workspaces.playground.editorTabs,
       playgroundIsEditorAutorun: state.workspaces.playground.isEditorAutorun,
       playgroundSourceChapter: state.workspaces.playground.context.chapter,
       playgroundSourceVariant: state.workspaces.playground.context.variant,

@@ -20,8 +20,9 @@ import Playground, { DispatchProps, StateProps } from './Playground';
 const mapStateToProps: MapStateToProps<StateProps, {}, OverallState> = state => ({
   ..._.pick(
     state.workspaces.playground,
-    'activeEditorTabIndex',
     'editorTabs',
+    'programPrependValue',
+    'programPostpendValue',
     'editorSessionId',
     'execTime',
     'stepLimit',
@@ -55,9 +56,10 @@ const mapDispatchToProps: MapDispatchToProps<DispatchProps, {}> = (dispatch: Dis
       handleChangeExecTime: (execTime: number) => changeExecTime(execTime, workspaceLocation),
       handleChapterSelect: (chapter: Chapter, variant: Variant) =>
         chapterSelect(chapter, variant, workspaceLocation),
-      handleEditorValueChange: (val: string) => updateEditorValue(val, workspaceLocation),
-      handleEditorUpdateBreakpoints: (breakpoints: string[]) =>
-        setEditorBreakpoint(breakpoints, workspaceLocation),
+      handleEditorValueChange: (editorTabIndex: number, newEditorValue: string) =>
+        updateEditorValue(workspaceLocation, editorTabIndex, newEditorValue),
+      handleEditorUpdateBreakpoints: (editorTabIndex: number, newBreakpoints: string[]) =>
+        setEditorBreakpoint(workspaceLocation, editorTabIndex, newBreakpoints),
       handleReplEval: () => evalRepl(workspaceLocation),
       handleReplOutputClear: () => clearReplOutput(workspaceLocation),
       handleUsingSubst: (usingSubst: boolean) => toggleUsingSubst(usingSubst, workspaceLocation)

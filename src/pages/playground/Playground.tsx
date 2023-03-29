@@ -26,10 +26,13 @@ import {
   setEditorSessionId,
   setSharedbConnected
 } from 'src/commons/collabEditing/CollabEditingActions';
-import { showFullJSWarningOnUrlLoad } from 'src/commons/fullJS/FullJSUtils';
-import { showHTMLDisclaimer } from 'src/commons/html/HTMLUtils';
 import SideContentHtmlDisplay from 'src/commons/sideContent/SideContentHtmlDisplay';
 import { useResponsive, useTypedSelector } from 'src/commons/utils/Hooks';
+import {
+  showFullJSWarningOnUrlLoad,
+  showFulTSWarningOnUrlLoad,
+  showHTMLDisclaimer
+} from 'src/commons/utils/WarningDialogHelper';
 import {
   addHtmlConsoleError,
   browseReplHistoryDown,
@@ -39,11 +42,14 @@ import {
   evalEditor,
   navigateToDeclaration,
   promptAutocomplete,
+  removeEditorTab,
   sendReplInputToOutput,
   toggleEditorAutorun,
+  toggleFolderMode,
+  updateActiveEditorTabIndex,
   updateReplValue
 } from 'src/commons/workspace/WorkspaceActions';
-import { WorkspaceLocation } from 'src/commons/workspace/WorkspaceTypes';
+import { EditorTabState, WorkspaceLocation } from 'src/commons/workspace/WorkspaceTypes';
 import {
   githubOpenFile,
   githubSaveFile,
@@ -78,16 +84,19 @@ import { ControlBarGoogleDriveButtons } from '../../commons/controlBar/ControlBa
 import { ControlBarSessionButtons } from '../../commons/controlBar/ControlBarSessionButton';
 import { ControlBarShareButton } from '../../commons/controlBar/ControlBarShareButton';
 import { ControlBarStepLimit } from '../../commons/controlBar/ControlBarStepLimit';
+import { ControlBarToggleFolderModeButton } from '../../commons/controlBar/ControlBarToggleFolderModeButton';
 import { ControlBarGitHubButtons } from '../../commons/controlBar/github/ControlBarGitHubButtons';
 import {
   convertEditorTabStateToProps,
   NormalEditorContainerProps
 } from '../../commons/editor/EditorContainer';
 import { Position } from '../../commons/editor/EditorTypes';
+import FileSystemView from '../../commons/fileSystemView/FileSystemView';
 import Markdown from '../../commons/Markdown';
 import MobileWorkspace, {
   MobileWorkspaceProps
 } from '../../commons/mobileWorkspace/MobileWorkspace';
+import { SideBarTab } from '../../commons/sideBar/SideBar';
 import SideContentRemoteExecution from '../../commons/sideContent/remoteExecution/SideContentRemoteExecution';
 import SideContentDataVisualizer from '../../commons/sideContent/SideContentDataVisualizer';
 import SideContentEnvVisualizer from '../../commons/sideContent/SideContentEnvVisualizer';
@@ -98,7 +107,6 @@ import { generateSourceIntroduction } from '../../commons/utils/IntroductionHelp
 import { stringParamToInt } from '../../commons/utils/ParamParseHelper';
 import { parseQuery } from '../../commons/utils/QueryHelper';
 import Workspace, { WorkspaceProps } from '../../commons/workspace/Workspace';
-import { EditorTabState } from '../../commons/workspace/WorkspaceTypes';
 import { initSession, log } from '../../features/eventLogging';
 import { GitHubSaveInfo } from '../../features/github/GitHubTypes';
 import { PersistenceFile } from '../../features/persistence/PersistenceTypes';
@@ -107,6 +115,7 @@ import {
   Input,
   SelectionRange
 } from '../../features/sourceRecorder/SourceRecorderTypes';
+import { WORKSPACE_BASE_PATHS } from '../fileSystem/createInBrowserFileSystem';
 
 export type PlaygroundProps = OwnProps &
   DispatchProps &
@@ -125,16 +134,17 @@ export type OwnProps = {
 export type DispatchProps = {
   handleChangeExecTime: (execTime: number) => void;
   handleChapterSelect: (chapter: Chapter, variant: Variant) => void;
-  handleEditorValueChange: (val: string) => void;
-  handleEditorUpdateBreakpoints: (breakpoints: string[]) => void;
+  handleEditorValueChange: (editorTabIndex: number, newEditorValue: string) => void;
+  handleEditorUpdateBreakpoints: (editorTabIndex: number, newBreakpoints: string[]) => void;
   handleReplEval: () => void;
   handleReplOutputClear: () => void;
   handleUsingSubst: (usingSubst: boolean) => void;
 };
 
 export type StateProps = {
-  activeEditorTabIndex: number | null;
   editorTabs: EditorTabState[];
+  programPrependValue: string;
+  programPostpendValue: string;
   editorSessionId: string;
   execTime: number;
   isEditorAutorun: boolean;
@@ -167,6 +177,8 @@ export async function handleHash(hash: string, props: PlaygroundProps) {
   const chapter = stringParamToInt(qs.chap) || undefined;
   if (chapter === Chapter.FULL_JS) {
     showFullJSWarningOnUrlLoad();
+  } else if (chapter === Chapter.FULL_TS) {
+    showFulTSWarningOnUrlLoad();
   } else {
     if (chapter === Chapter.HTML) {
       const continueToHtml = await showHTMLDisclaimer();
@@ -177,7 +189,9 @@ export async function handleHash(hash: string, props: PlaygroundProps) {
     const programLz = qs.lz ?? qs.prgrm;
     const program = programLz && decompressFromEncodedURIComponent(programLz);
     if (program) {
-      props.handleEditorValueChange(program);
+      // TODO: Hardcoded to make use of the first editor tab. Refactoring is needed for this workspace to enable Folder mode.
+      props.handleEditorValueChange(0, program);
+      props.handleEditorUpdateBreakpoints(0, []);
     }
     const variant: Variant =
       sourceLanguages.find(
@@ -209,6 +223,10 @@ const Playground: React.FC<PlaygroundProps> = ({ workspaceLocation = 'playground
   const searchParams = new URLSearchParams(location.search);
   const shouldAddDevice = searchParams.get('add_device');
 
+  const { isFolderModeEnabled, activeEditorTabIndex } = useTypedSelector(
+    state => state.workspaces[workspaceLocation]
+  );
+
   // Hide search query from URL to maintain an illusion of security. The device secret
   // is still exposed via the 'Referer' header when requesting external content (e.g. Google API fonts)
   if (shouldAddDevice && !deviceSecret) {
@@ -225,7 +243,7 @@ const Playground: React.FC<PlaygroundProps> = ({ workspaceLocation = 'playground
   const [sessionId, setSessionId] = React.useState(() =>
     initSession('playground', {
       // TODO: Hardcoded to make use of the first editor tab. Rewrite after editor tabs are added.
-      editorValue: propsRef.current.editorTabs[0].value,
+      editorValue: propsRef.current.editorTabs[0]?.value ?? '',
       chapter: propsRef.current.playgroundSourceChapter
     })
   );
@@ -259,7 +277,7 @@ const Playground: React.FC<PlaygroundProps> = ({ workspaceLocation = 'playground
     setSessionId(
       initSession('playground', {
         // TODO: Hardcoded to make use of the first editor tab. Rewrite after editor tabs are added.
-        editorValue: propsRef.current.editorTabs[0].value,
+        editorValue: propsRef.current.editorTabs[0]?.value ?? '',
         chapter: propsRef.current.playgroundSourceChapter
       })
     );
@@ -296,9 +314,9 @@ const Playground: React.FC<PlaygroundProps> = ({ workspaceLocation = 'playground
     [isGreen]
   );
 
-  const onEditorValueChange = React.useCallback(val => {
+  const onEditorValueChange = React.useCallback((editorTabIndex, newEditorValue) => {
     setLastEdit(new Date());
-    propsRef.current.handleEditorValueChange(val);
+    propsRef.current.handleEditorValueChange(editorTabIndex, newEditorValue);
   }, []);
 
   const onChangeTabs = React.useCallback(
@@ -552,8 +570,6 @@ const Playground: React.FC<PlaygroundProps> = ({ workspaceLocation = 'playground
     [dispatch, props.stepLimit, workspaceLocation]
   );
 
-  const { handleEditorValueChange } = props;
-
   const getEditorValue = React.useCallback(
     () => store.getState().workspaces[workspaceLocation].editorTabs[0].value,
     [store, workspaceLocation]
@@ -589,6 +605,21 @@ const Playground: React.FC<PlaygroundProps> = ({ workspaceLocation = 'playground
       />
     );
   }, [dispatch, isSicpEditor, props.initialEditorValueHash, props.queryString, props.shortURL]);
+
+  const toggleFolderModeButton = React.useMemo(() => {
+    // TODO: Remove this once the Folder mode is ready for production.
+    if (true) {
+      return <></>;
+    }
+
+    return (
+      <ControlBarToggleFolderModeButton
+        isFolderModeEnabled={isFolderModeEnabled}
+        toggleFolderMode={() => dispatch(toggleFolderMode(workspaceLocation))}
+        key="folder"
+      />
+    );
+  }, [dispatch, isFolderModeEnabled, workspaceLocation]);
 
   const playgroundIntroductionTab: SideContentTab = React.useMemo(
     () => ({
@@ -632,7 +663,10 @@ const Playground: React.FC<PlaygroundProps> = ({ workspaceLocation = 'playground
     }
 
     // (TEMP) Remove tabs for fullJS until support is integrated
-    if (props.playgroundSourceChapter === Chapter.FULL_JS) {
+    if (
+      props.playgroundSourceChapter === Chapter.FULL_JS ||
+      props.playgroundSourceChapter === Chapter.FULL_TS
+    ) {
       return [...tabs, dataVisualizerTab];
     }
 
@@ -698,8 +732,6 @@ const Playground: React.FC<PlaygroundProps> = ({ workspaceLocation = 'playground
 
   const onChangeMethod = React.useCallback(
     (newCode: string, delta: CodeDelta) => {
-      handleEditorValueChange(newCode);
-
       const input: Input = {
         time: Date.now(),
         type: 'codeDelta',
@@ -708,7 +740,7 @@ const Playground: React.FC<PlaygroundProps> = ({ workspaceLocation = 'playground
 
       pushLog(input);
     },
-    [handleEditorValueChange, pushLog]
+    [pushLog]
   );
 
   const onCursorChangeMethod = React.useCallback(
@@ -742,7 +774,7 @@ const Playground: React.FC<PlaygroundProps> = ({ workspaceLocation = 'playground
   );
 
   const handleEditorUpdateBreakpoints = React.useCallback(
-    (breakpoints: string[]) => {
+    (editorTabIndex: number, breakpoints: string[]) => {
       // get rid of holes in array
       const numberOfBreakpoints = breakpoints.filter(arrayItem => !!arrayItem).length;
       if (numberOfBreakpoints > 0) {
@@ -764,7 +796,7 @@ const Playground: React.FC<PlaygroundProps> = ({ workspaceLocation = 'playground
           propsRef.current.handleUsingSubst(false);
         }
       }
-      propsRef.current.handleEditorUpdateBreakpoints(breakpoints);
+      propsRef.current.handleEditorUpdateBreakpoints(editorTabIndex, breakpoints);
     },
     [selectedTab]
   );
@@ -774,19 +806,44 @@ const Playground: React.FC<PlaygroundProps> = ({ workspaceLocation = 'playground
     props.playgroundSourceVariant === Variant.CONCURRENT ||
     usingRemoteExecution;
 
+  const setActiveEditorTabIndex = React.useCallback(
+    (activeEditorTabIndex: number | null) =>
+      dispatch(updateActiveEditorTabIndex(workspaceLocation, activeEditorTabIndex)),
+    [dispatch, workspaceLocation]
+  );
+  const removeEditorTabByIndex = React.useCallback(
+    (editorTabIndex: number) => dispatch(removeEditorTab(workspaceLocation, editorTabIndex)),
+    [dispatch, workspaceLocation]
+  );
+
   const editorContainerProps: NormalEditorContainerProps = {
     ..._.pick(props, 'editorSessionId', 'isEditorAutorun'),
     editorVariant: 'normal',
+    baseFilePath: WORKSPACE_BASE_PATHS.playground,
+    isFolderModeEnabled,
+    activeEditorTabIndex,
+    setActiveEditorTabIndex,
+    removeEditorTabByIndex,
     editorTabs: props.editorTabs.map(convertEditorTabStateToProps),
-    handleDeclarationNavigate: (cursorPosition: Position) =>
-      dispatch(navigateToDeclaration(workspaceLocation, cursorPosition)),
+    handleDeclarationNavigate: React.useCallback(
+      (cursorPosition: Position) =>
+        dispatch(navigateToDeclaration(workspaceLocation, cursorPosition)),
+      [dispatch, workspaceLocation]
+    ),
     handleEditorEval,
-    handlePromptAutocomplete: (row: number, col: number, callback: any) =>
-      dispatch(promptAutocomplete(workspaceLocation, row, col, callback)),
-    handleSendReplInputToOutput: (code: string) =>
-      dispatch(sendReplInputToOutput(code, workspaceLocation)),
-    handleSetSharedbConnected: (connected: boolean) =>
-      dispatch(setSharedbConnected(workspaceLocation, connected)),
+    handlePromptAutocomplete: React.useCallback(
+      (row: number, col: number, callback: any) =>
+        dispatch(promptAutocomplete(workspaceLocation, row, col, callback)),
+      [dispatch, workspaceLocation]
+    ),
+    handleSendReplInputToOutput: React.useCallback(
+      (code: string) => dispatch(sendReplInputToOutput(code, workspaceLocation)),
+      [dispatch, workspaceLocation]
+    ),
+    handleSetSharedbConnected: React.useCallback(
+      (connected: boolean) => dispatch(setSharedbConnected(workspaceLocation, connected)),
+      [dispatch, workspaceLocation]
+    ),
     onChange: onChangeMethod,
     onCursorChange: onCursorChangeMethod,
     onSelectionChange: onSelectionChangeMethod,
@@ -800,10 +857,18 @@ const Playground: React.FC<PlaygroundProps> = ({ workspaceLocation = 'playground
 
   const replProps = {
     ..._.pick(props, 'output', 'replValue', 'handleReplEval', 'usingSubst'),
-    handleBrowseHistoryDown: () => dispatch(browseReplHistoryDown(workspaceLocation)),
-    handleBrowseHistoryUp: () => dispatch(browseReplHistoryUp(workspaceLocation)),
-    handleReplValueChange: (newValue: string) =>
-      dispatch(updateReplValue(newValue, workspaceLocation)),
+    handleBrowseHistoryDown: React.useCallback(
+      () => dispatch(browseReplHistoryDown(workspaceLocation)),
+      [dispatch, workspaceLocation]
+    ),
+    handleBrowseHistoryUp: React.useCallback(
+      () => dispatch(browseReplHistoryUp(workspaceLocation)),
+      [dispatch, workspaceLocation]
+    ),
+    handleReplValueChange: React.useCallback(
+      (newValue: string) => dispatch(updateReplValue(newValue, workspaceLocation)),
+      [dispatch, workspaceLocation]
+    ),
     sourceChapter: props.playgroundSourceChapter,
     sourceVariant: props.playgroundSourceVariant,
     externalLibrary: ExternalLibraryName.NONE, // temporary placeholder as we phase out libraries
@@ -813,17 +878,33 @@ const Playground: React.FC<PlaygroundProps> = ({ workspaceLocation = 'playground
     disableScrolling: isSicpEditor
   };
 
-  const sideBarProps = {
-    tabs: [
-      // TODO: Re-enable on master once the feature is production-ready.
-      // {
-      //   label: 'Files',
-      //   body: <FileSystemView basePath="/playground" />,
-      //   iconName: IconNames.FOLDER_CLOSE,
-      //   id: SideContentType.files
-      // }
-    ]
-  };
+  const sideBarProps: { tabs: SideBarTab[] } = React.useMemo(() => {
+    // The sidebar is rendered if and only if there is at least one tab present.
+    // Because whether the sidebar is rendered or not affects the sidebar resizing
+    // logic, we cannot defer the decision on which sidebar tabs should be rendered
+    // to the sidebar as it would be too late - the sidebar resizing logic in the
+    // workspace would not be able to act on that information. Instead, we need to
+    // determine which sidebar tabs should be rendered here.
+    return {
+      tabs: [
+        ...(isFolderModeEnabled
+          ? [
+              {
+                label: 'Folder',
+                body: (
+                  <FileSystemView
+                    workspaceLocation="playground"
+                    basePath={WORKSPACE_BASE_PATHS.playground}
+                  />
+                ),
+                iconName: IconNames.FOLDER_CLOSE,
+                id: SideContentType.folder
+              }
+            ]
+          : [])
+      ]
+    };
+  }, [isFolderModeEnabled]);
 
   const workspaceProps: WorkspaceProps = {
     controlBarProps: {
@@ -832,6 +913,7 @@ const Playground: React.FC<PlaygroundProps> = ({ workspaceLocation = 'playground
         props.playgroundSourceChapter === Chapter.FULL_JS ? null : shareButton,
         chapterSelect,
         isSicpEditor ? null : sessionButtons,
+        toggleFolderModeButton,
         persistenceButtons,
         githubButtons,
         usingRemoteExecution || !isSourceLanguage(props.playgroundSourceChapter)
@@ -842,8 +924,10 @@ const Playground: React.FC<PlaygroundProps> = ({ workspaceLocation = 'playground
       ]
     },
     editorContainerProps: editorContainerProps,
-    handleSideContentHeightChange: change =>
-      dispatch(changeSideContentHeight(change, workspaceLocation)),
+    handleSideContentHeightChange: React.useCallback(
+      change => dispatch(changeSideContentHeight(change, workspaceLocation)),
+      [dispatch, workspaceLocation]
+    ),
     replProps: replProps,
     sideBarProps: sideBarProps,
     sideContentHeight: props.sideContentHeight,
@@ -872,7 +956,8 @@ const Playground: React.FC<PlaygroundProps> = ({ workspaceLocation = 'playground
           props.playgroundSourceChapter === Chapter.FULL_JS ? null : shareButton,
           isSicpEditor ? null : sessionButtons,
           persistenceButtons,
-          githubButtons
+          githubButtons,
+          toggleFolderModeButton
         ]
       },
       selectedTabId: selectedTab,

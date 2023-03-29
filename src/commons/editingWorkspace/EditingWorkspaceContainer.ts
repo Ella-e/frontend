@@ -26,20 +26,17 @@ import {
   promptAutocomplete,
   resetWorkspace,
   setEditorBreakpoint,
-  updateActiveEditorTab,
   updateCurrentAssessmentId,
   updateEditorValue,
   updateHasUnsavedChanges,
   updateReplValue,
   updateWorkspace
 } from '../workspace/WorkspaceActions';
-import { EditorTabState, WorkspaceLocation, WorkspaceState } from '../workspace/WorkspaceTypes';
+import { WorkspaceLocation, WorkspaceState } from '../workspace/WorkspaceTypes';
 import EditingWorkspace, { DispatchProps, OwnProps, StateProps } from './EditingWorkspace';
 
 const mapStateToProps: MapStateToProps<StateProps, OwnProps, OverallState> = (state, props) => {
   return {
-    activeEditorTabIndex: state.workspaces.assessment.activeEditorTabIndex,
-    editorTabs: state.workspaces.assessment.editorTabs,
     hasUnsavedChanges: state.workspaces.assessment.hasUnsavedChanges,
     isRunning: state.workspaces.assessment.isRunning,
     isDebugging: state.workspaces.assessment.isDebugging,
@@ -66,9 +63,10 @@ const mapDispatchToProps: MapDispatchToProps<DispatchProps, {}> = (dispatch: Dis
       handleDeclarationNavigate: (cursorPosition: Position) =>
         navigateToDeclaration(workspaceLocation, cursorPosition),
       handleEditorEval: () => evalEditor(workspaceLocation),
-      handleEditorValueChange: (val: string) => updateEditorValue(val, workspaceLocation),
-      handleEditorUpdateBreakpoints: (breakpoints: string[]) =>
-        setEditorBreakpoint(breakpoints, workspaceLocation),
+      handleEditorValueChange: (editorTabIndex: number, newEditorValue: string) =>
+        updateEditorValue(workspaceLocation, editorTabIndex, newEditorValue),
+      handleEditorUpdateBreakpoints: (editorTabIndex: number, newBreakpoints: string[]) =>
+        setEditorBreakpoint(workspaceLocation, editorTabIndex, newBreakpoints),
       handleInterruptEval: () => beginInterruptExecution(workspaceLocation),
       handleReplEval: () => evalRepl(workspaceLocation),
       handleReplOutputClear: () => clearReplOutput(workspaceLocation),
@@ -77,8 +75,6 @@ const mapDispatchToProps: MapDispatchToProps<DispatchProps, {}> = (dispatch: Dis
         resetWorkspace(workspaceLocation, options),
       handleUpdateWorkspace: (options: Partial<WorkspaceState>) =>
         updateWorkspace(workspaceLocation, options),
-      handleUpdateActiveEditorTab: (options: Partial<EditorTabState>) =>
-        updateActiveEditorTab(workspaceLocation, options),
       handleSave: submitAnswer,
       handleSideContentHeightChange: (heightChange: number) =>
         changeSideContentHeight(heightChange, workspaceLocation),

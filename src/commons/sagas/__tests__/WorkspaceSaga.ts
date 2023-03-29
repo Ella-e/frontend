@@ -4,7 +4,7 @@ import { Chapter, Finished, Variant } from 'js-slang/dist/types';
 import { call } from 'redux-saga/effects';
 import { expectSaga } from 'redux-saga-test-plan';
 import * as matchers from 'redux-saga-test-plan/matchers';
-import * as fullJSUtils from 'src/commons/fullJS/FullJSUtils';
+import { showFullJSDisclaimer, showFullTSDisclaimer } from 'src/commons/utils/WarningDialogHelper';
 
 import {
   beginInterruptExecution,
@@ -16,7 +16,12 @@ import {
   evalTestcaseFailure,
   evalTestcaseSuccess
 } from '../../application/actions/InterpreterActions';
-import { defaultState, fullJSLanguage, OverallState } from '../../application/ApplicationTypes';
+import {
+  defaultState,
+  fullJSLanguage,
+  fullTSLanguage,
+  OverallState
+} from '../../application/ApplicationTypes';
 import { externalLibraries, ExternalLibraryName } from '../../application/types/ExternalTypes';
 import {
   BEGIN_DEBUG_PAUSE,
@@ -36,9 +41,9 @@ import {
   clearReplOutput,
   clearReplOutputLast,
   endClearContext,
-  highlightEditorLine,
   moveCursor,
-  sendReplInputToOutput
+  sendReplInputToOutput,
+  setEditorHighlightedLines
 } from '../../workspace/WorkspaceActions';
 import {
   BEGIN_CLEAR_CONTEXT,
@@ -53,7 +58,9 @@ import {
   NAV_DECLARATION,
   PLAYGROUND_EXTERNAL_SELECT,
   TOGGLE_EDITOR_AUTORUN,
-  WorkspaceLocation
+  TOGGLE_FOLDER_MODE,
+  WorkspaceLocation,
+  WorkspaceState
 } from '../../workspace/WorkspaceTypes';
 import workspaceSaga, { evalCode, evalEditor, evalTestCode, runTestCase } from '../WorkspaceSaga';
 
@@ -85,12 +92,48 @@ beforeEach(() => {
   (window as any).Inspector.highlightLine = jest.fn();
 });
 
+describe('TOGGLE_FOLDER_MODE', () => {
+  test('calls showWarningMessage correctly when isFolderMode is false', () => {
+    const workspaceLocation = 'assessment';
+    const updatedWorkspaceFields: Partial<WorkspaceState> = {
+      isFolderModeEnabled: false
+    };
+    const updatedDefaultState = generateDefaultState(workspaceLocation, updatedWorkspaceFields);
+
+    return expectSaga(workspaceSaga)
+      .withState(updatedDefaultState)
+      .call(showWarningMessage, 'Folder mode disabled', 750)
+      .dispatch({
+        type: TOGGLE_FOLDER_MODE,
+        payload: { workspaceLocation }
+      })
+      .silentRun();
+  });
+
+  test('calls showWarningMessage correctly when isFolderMode is true', () => {
+    const workspaceLocation = 'grading';
+    const updatedWorkspaceFields: Partial<WorkspaceState> = {
+      isFolderModeEnabled: true
+    };
+    const updatedDefaultState = generateDefaultState(workspaceLocation, updatedWorkspaceFields);
+
+    return expectSaga(workspaceSaga)
+      .withState(updatedDefaultState)
+      .call(showWarningMessage, 'Folder mode enabled', 750)
+      .dispatch({
+        type: TOGGLE_FOLDER_MODE,
+        payload: { workspaceLocation }
+      })
+      .silentRun();
+  });
+});
+
 describe('EVAL_EDITOR', () => {
   test('puts beginClearContext and correctly executes prepend and value in sequence (calls evalCode)', () => {
     const workspaceLocation = 'playground';
-    const editorPrepend = 'const foo = (x) => -1;\n"reeee";';
+    const programPrependValue = 'const foo = (x) => -1;\n"reeee";';
     const editorValue = 'foo(2);';
-    const editorPostpend = '42;';
+    const programPostpendValue = '42;';
     const execTime = 1000;
     const context = createContext();
     const variant = Variant.DEFAULT;
@@ -114,12 +157,12 @@ describe('EVAL_EDITOR', () => {
       editorTabs: [
         {
           value: editorValue,
-          prependValue: editorPrepend,
-          postpendValue: editorPostpend,
           highlightedLines: [],
           breakpoints: []
         }
       ],
+      programPrependValue,
+      programPostpendValue,
       execTime,
       context,
       globals
@@ -135,7 +178,7 @@ describe('EVAL_EDITOR', () => {
         .call.like({
           fn: runInContext,
           args: [
-            editorPrepend,
+            programPrependValue,
             {
               scheduler: 'preemptive',
               originalMaxExecTime: execTime,
@@ -259,7 +302,7 @@ describe('DEBUG_RESUME', () => {
       .silentRun();
   });
 
-  test('puts beginInterruptExecution, clearReplOutput, highlightEditorLine and calls evalCode correctly', () => {
+  test('puts beginInterruptExecution, clearReplOutput, setEditorHighlightedLines and calls evalCode correctly', () => {
     const newDefaultState = generateDefaultState(workspaceLocation, {
       editorTabs: [{ value: editorValue }],
       context
@@ -279,7 +322,8 @@ describe('DEBUG_RESUME', () => {
         })
         .put(beginInterruptExecution(workspaceLocation))
         .put(clearReplOutput(workspaceLocation))
-        .put(highlightEditorLine([], workspaceLocation))
+        // TODO: Hardcoded to make use of the first editor tab. Rewrite after editor tabs are added.
+        .put(setEditorHighlightedLines(workspaceLocation, 0, []))
         // also calls evalCode here
         .call.like({
           fn: evalCode,
@@ -295,33 +339,36 @@ describe('DEBUG_RESUME', () => {
 });
 
 describe('DEBUG_RESET', () => {
-  test('puts clearReplOutput and highlightEditorLine correctly', () => {
+  test('puts clearReplOutput and highlightHighlightedLine correctly', () => {
     const workspaceLocation = 'assessment';
     const newDefaultState = generateDefaultState(workspaceLocation, {
       editorTabs: [{ value: 'test-value' }]
     });
 
-    return expectSaga(workspaceSaga)
-      .withState(newDefaultState)
-      .put(clearReplOutput(workspaceLocation))
-      .put(highlightEditorLine([], workspaceLocation))
-      .dispatch({
-        type: DEBUG_RESET,
-        payload: { workspaceLocation }
-      })
-      .silentRun()
-      .then(result => {
-        expect(result.storeState.workspaces[workspaceLocation].context.runtime.break).toBe(false);
-      });
+    return (
+      expectSaga(workspaceSaga)
+        .withState(newDefaultState)
+        .put(clearReplOutput(workspaceLocation))
+        // TODO: Hardcoded to make use of the first editor tab. Rewrite after editor tabs are added.
+        .put(setEditorHighlightedLines(workspaceLocation, 0, []))
+        .dispatch({
+          type: DEBUG_RESET,
+          payload: { workspaceLocation }
+        })
+        .silentRun()
+        .then(result => {
+          expect(result.storeState.workspaces[workspaceLocation].context.runtime.break).toBe(false);
+        })
+    );
   });
 });
 
 describe('EVAL_TESTCASE', () => {
   test('correctly executes prepend, value, postpend, testcase in sequence (calls evalTestCode)', () => {
     const workspaceLocation = 'grading';
-    const editorPrepend = 'let z = 2;\nconst bar = (x, y) => 10 * x + y;\n"boink";';
+    const programPrependValue = 'let z = 2;\nconst bar = (x, y) => 10 * x + y;\n"boink";';
     const editorValue = 'bar(6, 9);';
-    const editorPostpend = '777;';
+    const programPostpendValue = '777;';
     const execTime = 1000;
     const testcaseId = 0;
 
@@ -355,12 +402,12 @@ describe('EVAL_TESTCASE', () => {
       editorTabs: [
         {
           value: editorValue,
-          prependValue: editorPrepend,
-          postpendValue: editorPostpend,
           highlightedLines: [],
           breakpoints: []
         }
       ],
+      programPrependValue,
+      programPostpendValue,
       editorTestcases,
       execTime,
       context,
@@ -378,7 +425,7 @@ describe('EVAL_TESTCASE', () => {
         // calls evalCode here with the prepend in elevated Context: silent run
         .call.like({
           fn: runInContext,
-          args: [editorPrepend, { scheduler: 'preemptive', originalMaxExecTime: execTime }]
+          args: [programPrependValue, { scheduler: 'preemptive', originalMaxExecTime: execTime }]
         })
         // running the prepend block should return 'boink', but silent run -> not written to REPL
         .not.put(evalInterpreterSuccess('boink', workspaceLocation))
@@ -396,7 +443,7 @@ describe('EVAL_TESTCASE', () => {
         // calls evalCode here again with the postpend now in elevated Context: silent run
         .call.like({
           fn: runInContext,
-          args: [editorPostpend, { scheduler: 'preemptive', originalMaxExecTime: execTime }]
+          args: [programPostpendValue, { scheduler: 'preemptive', originalMaxExecTime: execTime }]
         })
         // running the postpend block should return true, but silent run -> not written to REPL
         .not.put(evalInterpreterSuccess(true, workspaceLocation))
@@ -497,9 +544,9 @@ describe('CHAPTER_SELECT', () => {
       };
 
       return expectSaga(workspaceSaga)
-        .provide([[matchers.call.fn(fullJSUtils.showFullJSDisclaimer), true]])
+        .provide([[matchers.call.fn(showFullJSDisclaimer), true]])
         .withState(newDefaultState)
-        .call(fullJSUtils.showFullJSDisclaimer)
+        .call(showFullJSDisclaimer)
         .put(beginClearContext(workspaceLocation, library, false))
         .put(clearReplOutput(workspaceLocation))
         .call(showSuccessMessage, `Switched to full JavaScript`, 1000)
@@ -518,9 +565,9 @@ describe('CHAPTER_SELECT', () => {
       const newDefaultState = generateDefaultState(workspaceLocation, { context, globals });
 
       return expectSaga(workspaceSaga)
-        .provide([[matchers.call.fn(fullJSUtils.showFullJSDisclaimer), false]])
+        .provide([[matchers.call.fn(showFullJSDisclaimer), false]])
         .withState(newDefaultState)
-        .call(fullJSUtils.showFullJSDisclaimer)
+        .call(showFullJSDisclaimer)
         .not.put.actionType(BEGIN_CLEAR_CONTEXT)
         .not.put.actionType(CLEAR_REPL_OUTPUT)
         .not.call.fn(showSuccessMessage)
@@ -529,6 +576,59 @@ describe('CHAPTER_SELECT', () => {
           payload: {
             chapter: fullJSLanguage.chapter,
             variant: fullJSLanguage.variant,
+            workspaceLocation
+          }
+        })
+        .silentRun();
+    });
+  });
+
+  describe('show disclaimer when fullTS is chosen', () => {
+    test('correct actions when user proceeds', () => {
+      const newDefaultState = generateDefaultState(workspaceLocation, { context, globals });
+      const library: Library = {
+        chapter: fullTSLanguage.chapter,
+        variant: fullTSLanguage.variant,
+        external: {
+          name: 'NONE' as ExternalLibraryName,
+          symbols: context.externalSymbols
+        },
+        globals
+      };
+
+      return expectSaga(workspaceSaga)
+        .provide([[matchers.call.fn(showFullTSDisclaimer), true]])
+        .withState(newDefaultState)
+        .call(showFullTSDisclaimer)
+        .put(beginClearContext(workspaceLocation, library, false))
+        .put(clearReplOutput(workspaceLocation))
+        .call(showSuccessMessage, `Switched to full TypeScript`, 1000)
+        .dispatch({
+          type: CHAPTER_SELECT,
+          payload: {
+            chapter: fullTSLanguage.chapter,
+            variant: fullTSLanguage.variant,
+            workspaceLocation
+          }
+        })
+        .silentRun();
+    });
+
+    test('correct actions when user cancels', () => {
+      const newDefaultState = generateDefaultState(workspaceLocation, { context, globals });
+
+      return expectSaga(workspaceSaga)
+        .provide([[matchers.call.fn(showFullTSDisclaimer), false]])
+        .withState(newDefaultState)
+        .call(showFullTSDisclaimer)
+        .not.put.actionType(BEGIN_CLEAR_CONTEXT)
+        .not.put.actionType(CLEAR_REPL_OUTPUT)
+        .not.call.fn(showSuccessMessage)
+        .dispatch({
+          type: CHAPTER_SELECT,
+          payload: {
+            chapter: fullTSLanguage.chapter,
+            variant: fullTSLanguage.variant,
             workspaceLocation
           }
         })
@@ -747,7 +847,7 @@ describe('evalCode', () => {
     test('with error in the code, should return correct line number in error', () => {
       code = '// Prepend\n error';
       state = generateDefaultState(workspaceLocation, {
-        editorTabs: [{ prependValue: '// Prepend' }]
+        programPrependValue: '// Prepend'
       });
 
       runInContext(code, context, {
@@ -978,40 +1078,49 @@ describe('NAV_DECLARATION', () => {
   test('moves cursor to declaration correctly', () => {
     const loc = { row: 0, column: 24 };
     const resultLoc = { row: 0, column: 6 };
-    return expectSaga(workspaceSaga)
-      .withState(state)
-      .dispatch({
-        type: NAV_DECLARATION,
-        payload: { workspaceLocation, cursorPosition: loc }
-      })
-      .put(moveCursor(workspaceLocation, resultLoc))
-      .silentRun();
+    return (
+      expectSaga(workspaceSaga)
+        .withState(state)
+        .dispatch({
+          type: NAV_DECLARATION,
+          payload: { workspaceLocation, cursorPosition: loc }
+        })
+        // TODO: Hardcoded to make use of the first editor tab. Rewrite after editor tabs are added.
+        .put(moveCursor(workspaceLocation, 0, resultLoc))
+        .silentRun()
+    );
   });
 
   test('does not move cursor if node is not an identifier', () => {
     const pos = { row: 0, column: 27 };
     const resultPos = { row: 0, column: 6 };
-    return expectSaga(workspaceSaga)
-      .withState(state)
-      .dispatch({
-        type: NAV_DECLARATION,
-        payload: { workspaceLocation, cursorPosition: pos }
-      })
-      .not.put(moveCursor(workspaceLocation, resultPos))
-      .silentRun();
+    return (
+      expectSaga(workspaceSaga)
+        .withState(state)
+        .dispatch({
+          type: NAV_DECLARATION,
+          payload: { workspaceLocation, cursorPosition: pos }
+        })
+        // TODO: Hardcoded to make use of the first editor tab. Rewrite after editor tabs are added.
+        .not.put(moveCursor(workspaceLocation, 0, resultPos))
+        .silentRun()
+    );
   });
 
   test('does not move cursor if node is same as declaration', () => {
     const pos = { row: 0, column: 7 };
     const resultPos = { row: 0, column: 6 };
-    return expectSaga(workspaceSaga)
-      .withState(state)
-      .dispatch({
-        type: NAV_DECLARATION,
-        payload: { workspaceLocation, cursorPosition: pos }
-      })
-      .not.put(moveCursor(workspaceLocation, resultPos))
-      .silentRun();
+    return (
+      expectSaga(workspaceSaga)
+        .withState(state)
+        .dispatch({
+          type: NAV_DECLARATION,
+          payload: { workspaceLocation, cursorPosition: pos }
+        })
+        // TODO: Hardcoded to make use of the first editor tab. Rewrite after editor tabs are added.
+        .not.put(moveCursor(workspaceLocation, 0, resultPos))
+        .silentRun()
+    );
   });
 });
 
