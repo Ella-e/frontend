@@ -37,9 +37,12 @@ import {
   REMOVE_EDITOR_TAB,
   REMOVE_EDITOR_TAB_FOR_FILE,
   REMOVE_EDITOR_TABS_FOR_DIRECTORY,
+  RENAME_EDITOR_TAB_FOR_FILE,
+  RENAME_EDITOR_TABS_FOR_DIRECTORY,
   RESET_TESTCASE,
   RESET_WORKSPACE,
   SEND_REPL_INPUT_TO_OUTPUT,
+  SET_FOLDER_MODE,
   SHIFT_EDITOR_TAB,
   TOGGLE_EDITOR_AUTORUN,
   TOGGLE_FOLDER_MODE,
@@ -167,6 +170,9 @@ export const runAllTestcases = (workspaceLocation: WorkspaceLocation) =>
 export const toggleFolderMode = (workspaceLocation: WorkspaceLocation) =>
   action(TOGGLE_FOLDER_MODE, { workspaceLocation });
 
+export const setFolderMode = (workspaceLocation: WorkspaceLocation, isFolderModeEnabled: boolean) =>
+  action(SET_FOLDER_MODE, { workspaceLocation, isFolderModeEnabled });
+
 export const updateActiveEditorTabIndex = (
   workspaceLocation: WorkspaceLocation,
   activeEditorTabIndex: number | null
@@ -230,6 +236,23 @@ export const removeEditorTabsForDirectory = (
   workspaceLocation: WorkspaceLocation,
   removedDirectoryPath: string
 ) => action(REMOVE_EDITOR_TABS_FOR_DIRECTORY, { workspaceLocation, removedDirectoryPath });
+
+export const renameEditorTabForFile = (
+  workspaceLocation: WorkspaceLocation,
+  oldFilePath: string,
+  newFilePath: string
+) => action(RENAME_EDITOR_TAB_FOR_FILE, { workspaceLocation, oldFilePath, newFilePath });
+
+export const renameEditorTabsForDirectory = (
+  workspaceLocation: WorkspaceLocation,
+  oldDirectoryPath: string,
+  newDirectoryPath: string
+) =>
+  action(RENAME_EDITOR_TABS_FOR_DIRECTORY, {
+    workspaceLocation,
+    oldDirectoryPath,
+    newDirectoryPath
+  });
 
 export const updateReplValue = (newReplValue: string, workspaceLocation: WorkspaceLocation) =>
   action(UPDATE_REPL_VALUE, { newReplValue, workspaceLocation });

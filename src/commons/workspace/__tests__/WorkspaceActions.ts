@@ -27,11 +27,14 @@ import {
   removeEditorTab,
   removeEditorTabForFile,
   removeEditorTabsForDirectory,
+  renameEditorTabForFile,
+  renameEditorTabsForDirectory,
   resetTestcase,
   resetWorkspace,
   sendReplInputToOutput,
   setEditorBreakpoint,
   setEditorHighlightedLines,
+  setFolderMode,
   shiftEditorTab,
   toggleEditorAutorun,
   toggleFolderMode,
@@ -68,9 +71,12 @@ import {
   REMOVE_EDITOR_TAB,
   REMOVE_EDITOR_TAB_FOR_FILE,
   REMOVE_EDITOR_TABS_FOR_DIRECTORY,
+  RENAME_EDITOR_TAB_FOR_FILE,
+  RENAME_EDITOR_TABS_FOR_DIRECTORY,
   RESET_TESTCASE,
   RESET_WORKSPACE,
   SEND_REPL_INPUT_TO_OUTPUT,
+  SET_FOLDER_MODE,
   SHIFT_EDITOR_TAB,
   TOGGLE_EDITOR_AUTORUN,
   TOGGLE_FOLDER_MODE,
@@ -281,6 +287,18 @@ test('toggleFolderMode generates correct action object', () => {
   });
 });
 
+test('setFolderMode generates correct action object', () => {
+  const isFolderModeEnabled = true;
+  const action = setFolderMode(gradingWorkspace, isFolderModeEnabled);
+  expect(action).toEqual({
+    type: SET_FOLDER_MODE,
+    payload: {
+      workspaceLocation: gradingWorkspace,
+      isFolderModeEnabled
+    }
+  });
+});
+
 test('updateActiveEditorTabIndex generates correct action object', () => {
   const activeEditorTabIndex = 3;
   const action = updateActiveEditorTabIndex(playgroundWorkspace, activeEditorTabIndex);
@@ -428,6 +446,38 @@ test('removeEditorTabsForDirectory generates correct action object', () => {
     payload: {
       workspaceLocation: playgroundWorkspace,
       removedDirectoryPath
+    }
+  });
+});
+
+test('renameEditorTabForFile generates correct action object', () => {
+  const oldFilePath = '/dir1/a.js';
+  const newFilePath = '/dir1/b.js';
+  const action = renameEditorTabForFile(playgroundWorkspace, oldFilePath, newFilePath);
+  expect(action).toEqual({
+    type: RENAME_EDITOR_TAB_FOR_FILE,
+    payload: {
+      workspaceLocation: playgroundWorkspace,
+      oldFilePath,
+      newFilePath
+    }
+  });
+});
+
+test('renameEditorTabsForDirectory generates correct action object', () => {
+  const oldDirectoryPath = '/dir1';
+  const newDirectoryPath = '/dir2';
+  const action = renameEditorTabsForDirectory(
+    playgroundWorkspace,
+    oldDirectoryPath,
+    newDirectoryPath
+  );
+  expect(action).toEqual({
+    type: RENAME_EDITOR_TABS_FOR_DIRECTORY,
+    payload: {
+      workspaceLocation: playgroundWorkspace,
+      oldDirectoryPath,
+      newDirectoryPath
     }
   });
 });
